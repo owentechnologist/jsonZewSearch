@@ -10,4 +10,35 @@
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000"
 ```
 
+The JSON Objects represent Zewtopia Zoo events and look like this:
+``` 
+{
+	"times": [{
+		"military": "0800",
+		"civilian": "8 AM"
+	}, {
+		"military": "1500",
+		"civilian": "3 PM"
+	}, {
+		"military": "2200",
+		"civilian": "10 PM"
+	}],
+	"responsible-parties": {
+		"number_of_contacts": 2,
+		"hosts": [{
+			"phone": "715-876-5522",
+			"name": "Duncan Mills",
+			"email": "dmilla@zew.org"
+		}, {
+			"phone": "815-336-5598",
+			"name": "Xiria Andrus",
+			"email": "xiriaa@zew.org"
+		}]
+	},
+	"cost": 0,
+	"name": "Gorilla Feeding",
+	"days": ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+	"location": "Gorilla House South"
+}
+```
 

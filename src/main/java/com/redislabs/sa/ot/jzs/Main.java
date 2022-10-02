@@ -69,31 +69,51 @@ public class Main {
      * ,"cost":10,"name":"Bonobo Lecture","days":["Mon","Thu"],"location":"Mammalian Lecture Theater"}
      * @param hnp
      */
-    private static void testJSONSearchQuery(HostAndPort hnp){
+    private static void testJSONSearchQuery(HostAndPort hnp) {
         try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
-            SearchResult result = jedis.ftSearch(INDEX_1_NAME, new Query("@days:{Mon} -@location:('House')")
+            String query = "@days:{Mon} -@location:('House')";
+            SearchResult result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times").as("times"), // multiple times may be returned
+                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only retuning 1st time in array due to use of *
                             FieldName.of("$.days").as("days"), // multiple days may be returned
-                            FieldName.of("$.responsible-parties.[0].phone").as("contact_phone"), // Returning the first phone only even though there could be more
+                            FieldName.of("$.responsible-parties.hosts.[0].email").as("contact_email"), // Returning the first email only even though there could be more
+                            FieldName.of("$.responsible-parties.hosts.[0].phone").as("contact_phone"), // Returning the first phone only even though there could be more
                             FieldName.of("event_name") // only a single value exists in a document
-                            )
+                    )
             );
+            printResultsToScreen(query, result);
 
-            System.out.println("\n\tFired Query - \"@days:{Mon} -@location:('House')\"\nHere is the response:\n");
+            //Second query:
+            query = "@days:{Mon} @days:{Tue} @times:{08*}";
+            result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
+                    .returnFields(
+                            FieldName.of("location"), // only a single value exists in a document
+                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only retuning 1st time in array due to use of *
+                            FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
+                            FieldName.of("$.days").as("days"), // multiple days may be returned
+                            FieldName.of("$.responsible-parties.hosts").as("hosts"),
+                            FieldName.of("event_name"), // only a single value exists in a document
+                            FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
+                    )
+            );
+            printResultsToScreen(query, result);
+        }
+    }
 
-            List<Document> doclist = result.getDocuments();
-            Iterator<Document> iterator = doclist.iterator();
-            while(iterator.hasNext()){
-                Document d = iterator.next();
-                Iterator<Map.Entry<String, Object>> propertiesIterator = d.getProperties().iterator();
-                while(propertiesIterator.hasNext()){
-                    Map.Entry<String, Object> pi = propertiesIterator.next();
-                    String propertyName = pi.getKey();
-                    Object propertyValue = pi.getValue();
-                    System.out.println(propertyName+" "+propertyValue);
-                }
+    private static void printResultsToScreen(String query,SearchResult result){
+        System.out.println("\n\tFired Query - \""+query+"\"\nHere is the response:\n");
+
+        List<Document> doclist = result.getDocuments();
+        Iterator<Document> iterator = doclist.iterator();
+        while (iterator.hasNext()) {
+            Document d = iterator.next();
+            Iterator<Map.Entry<String, Object>> propertiesIterator = d.getProperties().iterator();
+            while (propertiesIterator.hasNext()) {
+                Map.Entry<String, Object> pi = propertiesIterator.next();
+                String propertyName = pi.getKey();
+                Object propertyValue = pi.getValue();
+                System.out.println(propertyName + " " + propertyValue);
             }
         }
     }
@@ -130,13 +150,21 @@ public class Main {
             JSONArray days = new JSONArray(DAYS_OF_WEEK);
             obj.put("days",days);
 
+            JSONObject hostsHolder = new JSONObject();
+            hostsHolder.put("number_of_contacts",2);
             JSONArray hosts = new JSONArray();
             JSONObject contact = new JSONObject();
             contact.put("name", "Duncan Mills");
             contact.put("phone","715-876-5522");
             contact.put("email","dmilla@zew.org");
             hosts.put(contact);
-            obj.put("responsible-parties",hosts);
+            JSONObject contact2 = new JSONObject();
+            contact2.put("name", "Xiria Andrus");
+            contact2.put("phone","815-336-5598");
+            contact2.put("email","xiriaa@zew.org");
+            hosts.put(contact2);
+            hostsHolder.put("hosts",hosts);
+            obj.put("responsible-parties",hostsHolder);
             jedis.jsonSet("zew:activities:gf", obj);
 
             //build second zew event:
@@ -154,13 +182,16 @@ public class Main {
             days.put(DAYS_OF_WEEK[0]);
             days.put(DAYS_OF_WEEK[3]);
             obj.put("days",days);
+            hostsHolder = new JSONObject();
+            hostsHolder.put("number_of_contacts",1);
             hosts = new JSONArray();
             contact = new JSONObject();
             contact.put("name", "Dr. Clarissa Gumali");
             contact.put("phone","715-322-5992");
             contact.put("email","cgumali@zew.org");
             hosts.put(contact);
-            obj.put("responsible-parties",hosts);
+            hostsHolder.put("hosts",hosts);
+            obj.put("responsible-parties",hostsHolder);
             jedis.jsonSet("zew:activities:bl", obj);
         }
     }
