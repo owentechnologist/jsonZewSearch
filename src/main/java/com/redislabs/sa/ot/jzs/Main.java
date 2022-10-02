@@ -63,11 +63,15 @@ public class Main {
     }
 
     /*
-     * sample JSON that should be returned:
-     * {"times":[{"military":"1100","civilian":"11 AM"}]
-     * ,"responsible-parties":[{"phone":"715-322-5992","name":"Dr. Clarissa Gumali","email":"cgumali@zew.org"}]
-     * ,"cost":10,"name":"Bonobo Lecture","days":["Mon","Thu"],"location":"Mammalian Lecture Theater"}
-     * @param hnp
+     * sample JSON that is being queried: (note that only the specified return fields are returned from a query)
+     {"times":[{"military":"0800","civilian":"8 AM"},{"military":"1500","civilian":"3 PM"},{"military":"2200","civilian":"10 PM"}]
+     * ,"responsible-parties":{"number_of_contacts":2,
+     * "hosts":[{"phone":"715-876-5522","name":"Duncan Mills","email":"dmilla@zew.org"},{"phone":"815-336-5598",
+     * "name":"Xiria Andrus","email":"xiriaa@zew.org"}]},
+     * "cost":0,"name":"Gorilla Feeding",
+     * "days":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
+     * "location":"Gorilla House South"}
+     * * @param hnp
      */
     private static void testJSONSearchQuery(HostAndPort hnp) {
         try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
