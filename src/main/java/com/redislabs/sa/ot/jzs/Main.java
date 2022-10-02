@@ -98,6 +98,21 @@ public class Main {
                     )
             );
             printResultsToScreen(query, result);
+
+            //Third query:
+            query = "@cost:[-inf 5.00]";
+            result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
+                    .returnFields(
+                            FieldName.of("location"), // only a single value exists in a document
+                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only retuning 1st time in array due to use of *
+                            FieldName.of("$.times.[1].civilian").as("second_event_time"), // only retuning 1st time in array due to use of *
+                            FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
+                            FieldName.of("$.days").as("days"), // multiple days may be returned
+                            FieldName.of("event_name"), // only a single value exists in a document
+                            FieldName.of("$.cost").as("cost_in_us_dollars")
+                    )
+            );
+            printResultsToScreen(query, result);
         }
     }
 
