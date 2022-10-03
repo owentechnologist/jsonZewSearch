@@ -79,7 +79,7 @@ public class Main {
             SearchResult result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only retuning 1st time in array due to use of *
+                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("$.responsible-parties.hosts.[0].email").as("contact_email"), // Returning the first email only even though there could be more
                             FieldName.of("$.responsible-parties.hosts.[0].phone").as("contact_phone"), // Returning the first phone only even though there could be more
@@ -93,7 +93,7 @@ public class Main {
             result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only retuning 1st time in array due to use of *
+                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
                             FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("$.responsible-parties.hosts").as("hosts"),
@@ -108,8 +108,8 @@ public class Main {
             result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only retuning 1st time in array due to use of *
-                            FieldName.of("$.times.[1].civilian").as("second_event_time"), // only retuning 1st time in array due to use of *
+                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times.[1].civilian").as("second_event_time"), // only returning 2nd time in array if it exists
                             FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("event_name"), // only a single value exists in a document
