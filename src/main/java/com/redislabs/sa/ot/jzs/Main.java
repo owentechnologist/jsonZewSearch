@@ -21,6 +21,7 @@ public class Main {
 
     private static final String[] DAYS_OF_WEEK = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
     private static final String INDEX_1_NAME = "idx_zew_events";
+    private static final String INDEX_ALIAS_NAME = "idxa_zew_events";
     private static final String PREFIX_FOR_SEARCH = "zew:activities:";
 
     public static void main(String[] args){
@@ -76,7 +77,7 @@ public class Main {
     private static void testJSONSearchQuery(HostAndPort hnp) {
         try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
             String query = "@days:{Mon} -@location:('House')";
-            SearchResult result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
+            SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
                             FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
@@ -90,7 +91,7 @@ public class Main {
 
             //Second query:
             query = "@days:{Mon} @days:{Tue} @times:{08*}";
-            result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
+            result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
                             FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
@@ -105,7 +106,7 @@ public class Main {
 
             //Third query:
             query = "@cost:[-inf 5.00]";
-            result = jedis.ftSearch(INDEX_1_NAME, new Query(query)
+            result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
                             FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
@@ -252,7 +253,13 @@ public class Main {
 
         jedisPooled.ftCreate(INDEX_1_NAME,IndexOptions.defaultOptions().setDefinition(indexDefinition),schema2);
         //AND THEN: add schema alias so we can toggle between indexes:
-        jedisPooled.ftAliasAdd("idxa_zew_events",INDEX_1_NAME);
+        /*
+        Added use of search index Alias (this allows for possible
+        re-assigning of the alias to an alternate index that perhaps targets a different underlying dataset
+        - maybe including additional or entirely different prefixes
+        This example doesn't demonstrate that reassignment of the alias - just its effective use as a layer of indirection.
+         */
+        jedisPooled.ftAliasAdd(INDEX_ALIAS_NAME,INDEX_1_NAME);
         System.out.println("Successfully created search index and search index alias");
     }
 }
