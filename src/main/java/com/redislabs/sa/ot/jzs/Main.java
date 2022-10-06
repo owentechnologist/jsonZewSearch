@@ -156,7 +156,10 @@ public class Main {
             timeObj3pm.put("military","1500");
             timeObj3pm.put("civilian","3 PM");
             JSONObject timeObj10pm = new JSONObject();
-            timeObj10pm.put("military","2200");
+
+            //timeObj10pm.put("military","2200");
+            //included a null value to test the processing of null:
+            timeObj10pm.put("military",(Object)null);
             timeObj10pm.put("civilian","10 PM");
 
             ArrayList<JSONObject> timeObjects = new ArrayList<>();
