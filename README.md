@@ -5,12 +5,21 @@
 2) creating a RediSearch Index using JSON
 3) creating a Search Alias - because it allows for some additional decoupling between client and index details
 4) executing a search query and examining the returned results
+
+<em>* Note that all coded queries return at a maximum 50 results - feel free to execute additional queries using redis-cli etc...</em>
 ### To run the program execute the following replacing host and port values with your own:
 ```
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000"
 ```
 
-The JSON Objects represent Zewtopia Zoo events and look like this:
+### To run the program loading a larger quantity of JSON activity Objects use the --quantity arg like this:
+
+```
+mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
+```
+
+
+The JSON Objects represent fake Zewtopia Zoo events and look like this:
 ``` 
 {
 	"times": [{

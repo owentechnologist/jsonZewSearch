@@ -1,9 +1,13 @@
 package com.redislabs.sa.ot.jzs;
+import com.github.javafaker.Animal;
+import com.github.javafaker.Faker;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import redis.clients.jedis.*;
 import redis.clients.jedis.search.*;
+import redis.clients.jedis.search.aggr.*;
 
+import java.lang.reflect.Array;
 import java.util.*;
 
 /**
@@ -16,17 +20,24 @@ import java.util.*;
  * 4) executing a search query and examining the returned results
  * To run the program execute the following replacing host and port values with your own:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000"
+ * to run the program loading a larger quantity of JSON activity Objects use the --quantity arg like this:
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
+ * Note that default limit on # of results is 3 results - to modify this use --limitsize like this:
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20"
+ *
  */
 public class Main {
 
-    private static final String[] DAYS_OF_WEEK = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
     private static final String INDEX_1_NAME = "idx_zew_events";
     private static final String INDEX_ALIAS_NAME = "idxa_zew_events";
     private static final String PREFIX_FOR_SEARCH = "zew:activities:";
+    private static int howManyResultsToShow = 3;
 
     public static void main(String[] args){
         String host = "192.168.1.20";
-        Integer port = 12000;
+        int port = 12000;
+        int quantity = 0;
+        boolean isOnlyTwo = true;
         if(args.length>0){
             ArrayList<String> argList = new ArrayList<>(Arrays.asList(args));
             if(argList.contains("--host")){
@@ -36,6 +47,15 @@ public class Main {
             if(argList.contains("--port")){
                 int portIndex = argList.indexOf("--port");
                 port = Integer.parseInt(argList.get(portIndex+1));
+            }
+            if(argList.contains("--quantity")){
+                isOnlyTwo=false;
+                int quantityIndex = argList.indexOf("--quantity");
+                quantity = Integer.parseInt(argList.get(quantityIndex+1));
+            }
+            if(argList.contains("--limitsize")){
+                int limitIndex = argList.indexOf("--limitsize");
+                howManyResultsToShow = Integer.parseInt(argList.get(limitIndex+1));
             }
         }
         HostAndPort hnp = new HostAndPort(host,port);
@@ -52,8 +72,8 @@ public class Main {
             }catch(Throwable t2){System.out.println(""+t2.getMessage());}
         }
         System.out.println("LOADING JSON DATA...");
-        loadData(hnp);
-        System.out.println("TESTING SEARCH QUERY ...");
+        loadData(hnp,isOnlyTwo,quantity);
+        System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(hnp);
     }
 
@@ -84,8 +104,10 @@ public class Main {
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("$.responsible-parties.hosts.[0].email").as("contact_email"), // Returning the first email only even though there could be more
                             FieldName.of("$.responsible-parties.hosts.[0].phone").as("contact_phone"), // Returning the first phone only even though there could be more
-                            FieldName.of("event_name") // only a single value exists in a document
-                    )
+                            FieldName.of("event_name"), // only a single value exists in a document
+                            FieldName.of("$.times[2].military").as("military1"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.description")
+                    ).limit(0,howManyResultsToShow)
             );
             printResultsToScreen(query, result);
 
@@ -100,7 +122,7 @@ public class Main {
                             FieldName.of("$.responsible-parties.hosts").as("hosts"),
                             FieldName.of("event_name"), // only a single value exists in a document
                             FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
-                    )
+                    ).limit(0,howManyResultsToShow)
             );
             printResultsToScreen(query, result);
 
@@ -115,14 +137,34 @@ public class Main {
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("event_name"), // only a single value exists in a document
                             FieldName.of("$.cost").as("cost_in_us_dollars")
-                    )
+                    ).limit(0,howManyResultsToShow)
             );
             printResultsToScreen(query, result);
+            ArrayList<String> groupByFields = new ArrayList<>();
+            groupByFields.add("@cost");
+            groupByFields.add("@location");
+            AggregationBuilder builder = new AggregationBuilder("@cost:[9.00 +inf]").groupBy("@location");
+            AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
+            printAggregateResultsToScreen(aggregationResult);
+        }
+    }
+
+    private static void printAggregateResultsToScreen(AggregationResult result){
+        System.out.println("\n\tFired Aggregation Query -  received "+result.getTotalResults()+" results:\n");
+        List<Map<String, Object>> r = result.getResults();
+        System.out.println("The number of rows returned is: "+r.size());
+        for(int row = 0;row < r.size();row++){
+            Set<String> rr = r.get(row).keySet();
+            Iterator<String> keySetIterator = rr.iterator();
+            while(keySetIterator.hasNext()) {
+                String keyName = keySetIterator.next();
+                System.out.println(keyName+": "+result.getRow(row).getString(keyName));
+            }
         }
     }
 
     private static void printResultsToScreen(String query,SearchResult result){
-        System.out.println("\n\tFired Query - \""+query+"\"\nHere is the response:\n");
+        System.out.println("\n\tFired Query - \""+query+"\"\n Received a total of "+result.getTotalResults()+" results.\nDisplaying "+howManyResultsToShow+" results:\n");
 
         List<Document> doclist = result.getDocuments();
         Iterator<Document> iterator = doclist.iterator();
@@ -135,87 +177,6 @@ public class Main {
                 Object propertyValue = pi.getValue();
                 System.out.println(propertyName + " " + propertyValue);
             }
-        }
-    }
-
-    //load JSON Objects for testing
-    private static void loadData(HostAndPort hnp){
-        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
-            jedis.del("zew:activities:gf");
-            jedis.del("zew:activities:bl");
-
-            JSONObject obj = new JSONObject();
-            obj.put("name", "Gorilla Feeding");
-            obj.put("cost", 0.00);
-            obj.put("location","Gorilla House South");
-
-            JSONObject timeObj8am = new JSONObject();
-            timeObj8am.put("military","0800");
-            timeObj8am.put("civilian","8 AM");
-            JSONObject timeObj3pm = new JSONObject();
-            timeObj3pm.put("military","1500");
-            timeObj3pm.put("civilian","3 PM");
-            JSONObject timeObj10pm = new JSONObject();
-
-            //timeObj10pm.put("military","2200");
-            //included a null value to test the processing of null:
-            timeObj10pm.put("military",(Object)null);
-            timeObj10pm.put("civilian","10 PM");
-
-            ArrayList<JSONObject> timeObjects = new ArrayList<>();
-            timeObjects.add(timeObj8am);
-            timeObjects.add(timeObj3pm);
-            timeObjects.add(timeObj10pm);
-
-            JSONArray times = new JSONArray(timeObjects);
-
-            obj.put("times",times);
-            JSONArray days = new JSONArray(DAYS_OF_WEEK);
-            obj.put("days",days);
-
-            JSONObject hostsHolder = new JSONObject();
-            hostsHolder.put("number_of_contacts",2);
-            JSONArray hosts = new JSONArray();
-            JSONObject contact = new JSONObject();
-            contact.put("name", "Duncan Mills");
-            contact.put("phone","715-876-5522");
-            contact.put("email","dmilla@zew.org");
-            hosts.put(contact);
-            JSONObject contact2 = new JSONObject();
-            contact2.put("name", "Xiria Andrus");
-            contact2.put("phone","815-336-5598");
-            contact2.put("email","xiriaa@zew.org");
-            hosts.put(contact2);
-            hostsHolder.put("hosts",hosts);
-            obj.put("responsible-parties",hostsHolder);
-            jedis.jsonSet("zew:activities:gf", obj);
-
-            //build second zew event:
-            obj = new JSONObject();
-            obj.put("name", "Bonobo Lecture");
-            obj.put("cost", 10.00);
-            obj.put("location","Mammalian Lecture Theater");
-            times = new JSONArray();
-            JSONObject timeObj11am = new JSONObject();
-            timeObj11am.put("military","1100");
-            timeObj11am.put("civilian","11 AM");
-            times.put(timeObj11am);
-            obj.put("times",times);
-            days = new JSONArray();
-            days.put(DAYS_OF_WEEK[0]);
-            days.put(DAYS_OF_WEEK[3]);
-            obj.put("days",days);
-            hostsHolder = new JSONObject();
-            hostsHolder.put("number_of_contacts",1);
-            hosts = new JSONArray();
-            contact = new JSONObject();
-            contact.put("name", "Dr. Clarissa Gumali");
-            contact.put("phone","715-322-5992");
-            contact.put("email","cgumali@zew.org");
-            hosts.put(contact);
-            hostsHolder.put("hosts",hosts);
-            obj.put("responsible-parties",hostsHolder);
-            jedis.jsonSet("zew:activities:bl", obj);
         }
     }
 
@@ -246,15 +207,15 @@ public class Main {
          */
         JedisPooled jedisPooled = new JedisPooled(new ConnectionPoolConfig(), hnp.getHost(), hnp.getPort(), 2000);
 
-        Schema schema2 = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
-                .addField(new Schema.Field(FieldName.of("$.cost").as("cost"), Schema.FieldType.NUMERIC))
+        Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
+                .addSortableNumericField("$.cost").as("cost")
                 .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.times.*.military").as("times"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT));
         IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
                 .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
-        jedisPooled.ftCreate(INDEX_1_NAME,IndexOptions.defaultOptions().setDefinition(indexDefinition),schema2);
+        jedisPooled.ftCreate(INDEX_1_NAME,IndexOptions.defaultOptions().setDefinition(indexDefinition),schema);
         //AND THEN: add schema alias so we can toggle between indexes:
         /*
         Added use of search index Alias (this allows for possible
@@ -265,4 +226,186 @@ public class Main {
         jedisPooled.ftAliasAdd(INDEX_ALIAS_NAME,INDEX_1_NAME);
         System.out.println("Successfully created search index and search index alias");
     }
+
+
+    //load JSON Objects for testing
+    private static void loadData(HostAndPort hnp,boolean onlyLoadTwoObjects,int howManyObjects){
+        if(onlyLoadTwoObjects) {
+            try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+                jedis.del("zew:activities:gf");
+                jedis.del("zew:activities:bl");
+
+                JSONObject obj = new JSONObject();
+                obj.put("name", "Gorilla Feeding");
+                obj.put("cost", 0.00);
+                obj.put("location", "Gorilla House South");
+
+                JSONObject timeObj8am = new JSONObject();
+                timeObj8am.put("military", "0800");
+                timeObj8am.put("civilian", "8 AM");
+                JSONObject timeObj3pm = new JSONObject();
+                timeObj3pm.put("military", "1500");
+                timeObj3pm.put("civilian", "3 PM");
+                JSONObject timeObj10pm = new JSONObject();
+
+                //timeObj10pm.put("military","2200");
+                //included a null value to test the processing of null:
+                timeObj10pm.put("military", (Object) null);
+                timeObj10pm.put("civilian", "10 PM");
+
+                ArrayList<JSONObject> timeObjects = new ArrayList<>();
+                timeObjects.add(timeObj8am);
+                timeObjects.add(timeObj3pm);
+                timeObjects.add(timeObj10pm);
+
+                JSONArray times = new JSONArray(timeObjects);
+
+                obj.put("times", times);
+                JSONArray days = new JSONArray(JsonZewActivityBuilder.DAYS_OF_WEEK);
+                obj.put("days", days);
+
+                JSONObject hostsHolder = new JSONObject();
+                hostsHolder.put("number_of_contacts", 2);
+                JSONArray hosts = new JSONArray();
+                JSONObject contact = new JSONObject();
+                contact.put("name", "Duncan Mills");
+                contact.put("phone", "715-876-5522");
+                contact.put("email", "dmilla@zew.org");
+                hosts.put(contact);
+                JSONObject contact2 = new JSONObject();
+                contact2.put("name", "Xiria Andrus");
+                contact2.put("phone", "815-336-5598");
+                contact2.put("email", "xiriaa@zew.org");
+                hosts.put(contact2);
+                hostsHolder.put("hosts", hosts);
+                obj.put("responsible-parties", hostsHolder);
+                jedis.jsonSet("zew:activities:gf", obj);
+
+                //build second zew event:
+                obj = new JSONObject();
+                obj.put("name", "Bonobo Lecture");
+                obj.put("cost", 10.00);
+                obj.put("location", "Mammalian Lecture Theater");
+                times = new JSONArray();
+                JSONObject timeObj11am = new JSONObject();
+                timeObj11am.put("military", "1100");
+                timeObj11am.put("civilian", "11 AM");
+                times.put(timeObj11am);
+                obj.put("times", times);
+                days = new JSONArray();
+                days.put(JsonZewActivityBuilder.DAYS_OF_WEEK[0]);
+                days.put(JsonZewActivityBuilder.DAYS_OF_WEEK[3]);
+                obj.put("days", days);
+                hostsHolder = new JSONObject();
+                hostsHolder.put("number_of_contacts", 1);
+                hosts = new JSONArray();
+                contact = new JSONObject();
+                contact.put("name", "Dr. Clarissa Gumali");
+                contact.put("phone", "715-322-5992");
+                contact.put("email", "cgumali@zew.org");
+                hosts.put(contact);
+                hostsHolder.put("hosts", hosts);
+                obj.put("responsible-parties", hostsHolder);
+                jedis.jsonSet("zew:activities:bl", obj);
+            }
+        }
+        else{
+            try (Jedis jedis = new Jedis(hnp)) {
+                int howManyBatches = (howManyObjects/200)>0?(howManyObjects/200)+1:1;//makes sure at least 1 batch gets fired
+                int countDownOfObjects = howManyObjects;
+                System.out.println("Writing "+howManyObjects+" objects to Redis in "+howManyBatches+" batches of 200 or less...");
+                Pipeline pipeline = new Pipeline(jedis);
+                for (int x = 0; x < howManyBatches; x++) {
+                    int innerBatchQuantity = 200;
+                    if(countDownOfObjects<=200){
+                        innerBatchQuantity=countDownOfObjects;
+                    }
+                    for(int innerX = 0; innerX < innerBatchQuantity; innerX++) {
+                        //System.out.println("innerX == "+innerX);
+                        pipeline.jsonSet(PREFIX_FOR_SEARCH + countDownOfObjects, JsonZewActivityBuilder.createFakeJsonZewActivityObject());
+                        countDownOfObjects--;
+                    }
+                    pipeline.sync(); // execute batch of 200 JSON Set commands
+                    System.out.print("<"+countDownOfObjects+" JSON objects still to go> ");
+                }
+            }
+
+        }
+    }
+}
+class JsonZewActivityBuilder{
+
+    static final String[] DAYS_OF_WEEK = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
+    static Faker faker = new Faker();
+    static String[] activityTypes = new String[]{"Feeding","Training","Live Show","Lecture","Documentary","Petting","Ride"};
+    static String[] locationTypes = new String[]{"House","Habitat","Theater","Lecture Hall","Area"};
+    static String[] locationDirections = new String[]{"North","South","East","West"};
+    static float[] costsOverZero = new float[]{2.00f,5.00f,10.00f,25.00f};
+    static String[] animalSpecies = new String[]{"Lion","Tiger","Elephant","Giant Panda","Gorilla","Giraffe","Polar Bear","Hippo","Cheeta","Zebra","Meerkat","Penguin","Kangaroo","Flamingo","Koala","Chimpanzee","Llama","Green Anaconda","Hyena","Bonobo","Alligator","Orangutan"};
+    static String[] militaryTimes = new String[]{"0800","0900","1000","1100","1130","1200","1230","1300","1330","1400","1430","1500","1600","1700","1800","1900","2000","2030","2100","2200"};
+    static String[] civilianTimes = new String[]{"8 AM","9 AM","10 AM","11 AM","11:30 AM","12 Noon","12:30 PM","1:00 PM","1:30 PM","2:00 PM","2:30 PM","3:00 PM","4:00 PM","5:00 PM","6:00 PM","7:00 PM","8:00 PM","8:30 PM","9:00 PM","10:00 PM"};
+
+    static JSONObject createFakeJsonZewActivityObject(){
+        Random random = new Random();
+        int randomValue = random.nextInt(111);
+        JSONObject obj = new JSONObject();
+        obj.put("name", animalSpecies[randomValue%animalSpecies.length]+" "+activityTypes[randomValue%activityTypes.length]);
+        obj.put("cost", random.nextInt(3)>1?0.00f:costsOverZero[random.nextInt(111) % costsOverZero.length]);
+        obj.put("location", animalSpecies[randomValue%animalSpecies.length]+" "+locationTypes[random.nextInt(111)%locationTypes.length]+" "+locationDirections[random.nextInt(111)%locationDirections.length]);
+
+        JSONObject timeObj1 = new JSONObject();
+        randomValue = randomValue+random.nextInt(111);
+        timeObj1.put("military", militaryTimes[randomValue%militaryTimes.length]);
+        timeObj1.put("civilian", civilianTimes[randomValue%civilianTimes.length]);
+        JSONObject timeObj2 = new JSONObject();
+        randomValue = randomValue+3;
+        timeObj2.put("military", militaryTimes[randomValue%militaryTimes.length]);
+        timeObj2.put("civilian", civilianTimes[randomValue%civilianTimes.length]);
+        JSONObject timeObj3 = new JSONObject();
+        //included a null value to test the processing of null:
+        timeObj3.put("military", (Object) null);
+        timeObj3.put("civilian", (Object) null);
+
+        ArrayList<JSONObject> timeObjects = new ArrayList<>();
+        timeObjects.add(timeObj1);
+        timeObjects.add(timeObj2);
+        timeObjects.add(timeObj3);
+
+        JSONArray times = new JSONArray(timeObjects);
+        obj.put("times", times);
+        JSONArray days = new JSONArray(DAYS_OF_WEEK);//start with 7 days - then remove some random days:
+        for(int dayVal=random.nextInt(111)%DAYS_OF_WEEK.length;dayVal < DAYS_OF_WEEK.length;dayVal=dayVal+2){
+            days.remove(dayVal);
+        }
+        obj.put("days", days);
+
+        JSONObject hostsHolder = new JSONObject();
+        int numberOfContacts = (random.nextInt(111)%3)+1; //1-3 contacts for the event
+        hostsHolder.put("number_of_contacts", numberOfContacts);
+        JSONArray hosts = new JSONArray();
+        JSONObject contact = new JSONObject();
+        contact.put("name", faker.name().fullName());
+        contact.put("phone", faker.phoneNumber().cellPhone());
+        contact.put("email", ((String)contact.get("name")).split(" ")[0]+"@zew.org");
+        hosts.put(contact);
+        if(numberOfContacts>1) {
+            JSONObject contact2 = new JSONObject();
+            contact2.put("name", faker.name().fullName());
+            contact2.put("phone", faker.phoneNumber().cellPhone());
+            contact2.put("email", ((String)contact2.get("name")).split(" ")[0]+"@zew.org");
+            hosts.put(contact2);
+        }
+        if(numberOfContacts>2) {
+            JSONObject contact3 = new JSONObject();
+            contact3.put("name", faker.name().fullName());
+            contact3.put("phone", faker.phoneNumber().cellPhone());
+            contact3.put("email", ((String)contact3.get("name")).split(" ")[0]+"@zew.org");
+            hosts.put(contact3);
+        }
+
+        hostsHolder.put("hosts", hosts);
+        obj.put("responsible-parties", hostsHolder);
+        return obj;
+    }
+
 }
