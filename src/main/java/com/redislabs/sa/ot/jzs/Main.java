@@ -143,7 +143,8 @@ public class Main {
             ArrayList<String> groupByFields = new ArrayList<>();
             groupByFields.add("@cost");
             groupByFields.add("@location");
-            AggregationBuilder builder = new AggregationBuilder("@cost:[9.00 +inf]").groupBy("@location");
+//            AggregationBuilder builder = new AggregationBuilder("@cost:[9.00 +inf]").groupBy("@location");
+            AggregationBuilder builder = new AggregationBuilder("@cost:[9.00 +inf]").groupBy("@cost");
             AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
             printAggregateResultsToScreen(aggregationResult);
         }
