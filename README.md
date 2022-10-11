@@ -6,7 +6,6 @@
 3) creating a Search Alias - because it allows for some additional decoupling between client and index details
 4) executing a search query and examining the returned results
 
-<em>* Note that all coded queries return at a maximum 50 results - feel free to execute additional queries using redis-cli etc...</em>
 ### To run the program execute the following replacing host and port values with your own:
 ```
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000"
@@ -18,6 +17,10 @@ mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
 ```
 
+### <em>Note that default limit on # of results is 3 results - to modify this, use --limitsize like this:</em>
+```
+mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20"
+```
 
 The JSON Objects represent fake Zewtopia Zoo events and look like this:
 ``` 

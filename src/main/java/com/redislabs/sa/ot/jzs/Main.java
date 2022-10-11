@@ -112,7 +112,7 @@ public class Main {
             printResultsToScreen(query, result);
 
             //Second query:
-            query = "@days:{Mon} @days:{Tue} @times:{08*}";
+            query = "@days:{Mon Tue} @times:{08*}";
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
@@ -140,11 +140,17 @@ public class Main {
                     ).limit(0,howManyResultsToShow)
             );
             printResultsToScreen(query, result);
+
+            //TEST Simple AGGREGATION...
             ArrayList<String> groupByFields = new ArrayList<>();
             groupByFields.add("@cost");
             groupByFields.add("@location");
-//            AggregationBuilder builder = new AggregationBuilder("@cost:[9.00 +inf]").groupBy("@location");
-            AggregationBuilder builder = new AggregationBuilder("@cost:[9.00 +inf]").groupBy("@cost");
+            groupByFields.add("@event_name");
+            ArrayList<Reducer> reducerCollection = new ArrayList<>();
+            reducerCollection.add(Reducers.count().as("event_match_count"));
+            AggregationBuilder builder = new AggregationBuilder("@event_name:Petting @cost:[1.00 +inf] " +
+                    "@location:Gorilla @location:East -@days:{Tue Wed Thu}")
+                    .groupBy(groupByFields,reducerCollection).filter("@cost <= 9");
             AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
             printAggregateResultsToScreen(aggregationResult);
         }
@@ -153,15 +159,17 @@ public class Main {
     private static void printAggregateResultsToScreen(AggregationResult result){
         System.out.println("\n\tFired Aggregation Query -  received "+result.getTotalResults()+" results:\n");
         List<Map<String, Object>> r = result.getResults();
-        System.out.println("The number of rows returned is: "+r.size());
+        System.out.println("The number of rows returned is affected by any filters applied.  Returning this many: "+r.size());
         for(int row = 0;row < r.size();row++){
             Set<String> rr = r.get(row).keySet();
             Iterator<String> keySetIterator = rr.iterator();
+            System.out.println("");
             while(keySetIterator.hasNext()) {
                 String keyName = keySetIterator.next();
-                System.out.println(keyName+": "+result.getRow(row).getString(keyName));
+                System.out.print(keyName+":   "+result.getRow(row).getString(keyName)+"\t");
             }
         }
+        System.out.println(""); // returning display cursor to start of page on next line
     }
 
     private static void printResultsToScreen(String query,SearchResult result){
