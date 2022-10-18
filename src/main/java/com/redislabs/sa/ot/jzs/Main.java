@@ -1,5 +1,4 @@
 package com.redislabs.sa.ot.jzs;
-import com.github.javafaker.Animal;
 import com.github.javafaker.Faker;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -7,7 +6,8 @@ import redis.clients.jedis.*;
 import redis.clients.jedis.search.*;
 import redis.clients.jedis.search.aggr.*;
 
-import java.lang.reflect.Array;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.util.*;
 
 /**
@@ -22,7 +22,7 @@ import java.util.*;
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000"
  * to run the program loading a larger quantity of JSON activity Objects use the --quantity arg like this:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
- * Note that default limit on # of results is 3 results - to modify this use --limitsize like this:
+ * Note that default limit on # of results is 1 result - to modify this use --limitsize like this:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20"
  *
  */
@@ -31,6 +31,7 @@ public class Main {
     private static final String INDEX_1_NAME = "idx_zew_events";
     private static final String INDEX_ALIAS_NAME = "idxa_zew_events";
     private static final String PREFIX_FOR_SEARCH = "zew:activities:";
+    private static final String SUGGESTION_KEY = "zew:suggest";
     private static int howManyResultsToShow = 3;
 
     public static void main(String[] args){
@@ -75,6 +76,49 @@ public class Main {
         loadData(hnp,isOnlyTwo,quantity);
         System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(hnp);
+        prepareAutoComplete(hnp);
+        System.out.println("\nTesting auto-complete ...[try the letter g or k]");
+        testAutoComplete(hnp,5);
+    }
+
+    private static void testAutoComplete(HostAndPort hnp,int howManyTimes){
+        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(System.in));
+            for(int x=0;x<howManyTimes;x++){
+                System.out.println("Please type part of an animal Species name and hit enter to receive auto-complete suggestions.");
+                String input = reader.readLine();
+                List<String> stringList = jedis.ftSugGet(SUGGESTION_KEY, input);
+                System.out.println("Did you mean one of these:");
+                for(String suggestion : stringList){
+                    System.out.print("[ "+suggestion+" ],");
+                }
+                System.out.println("\n*****  End of Suggestions *****");
+            }
+        }catch(Throwable t){
+            System.out.println(t.getMessage());
+        }
+    }
+
+
+    /*
+    This example provides auto-complete for species of animal, the activities, and the locations available
+     */
+    private static void prepareAutoComplete(HostAndPort hnp){
+        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+            for(String animal:JsonZewActivityBuilder.animalSpecies) {
+                jedis.ftSugAdd(SUGGESTION_KEY,animal,1.0 );
+            }
+            for(String activity : JsonZewActivityBuilder.activityTypes){
+                jedis.ftSugAdd(SUGGESTION_KEY,activity,1.0 );
+            }
+            for(String location : JsonZewActivityBuilder.locationTypes){
+                jedis.ftSugAdd(SUGGESTION_KEY,location,.75 );
+            }
+            for(String direction :JsonZewActivityBuilder.locationDirections){
+                jedis.ftSugAdd(SUGGESTION_KEY,direction,.5 );
+            }
+        }catch(Throwable t){t.printStackTrace();}
     }
 
     private static void dropIndex(HostAndPort hnp) {
