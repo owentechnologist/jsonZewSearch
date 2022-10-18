@@ -24,7 +24,10 @@ import java.util.*;
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
  * Note that default limit on # of results is 3 results - to modify this use --limitsize like this:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20"
- *
+ * To add a test of auto-complete suggestions you can also use this flag and determine how many times to prompt the user for input:
+ * --autocomplete 3
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20 --autocomplete 2"
+ *  *
  */
 public class Main {
 
@@ -33,6 +36,7 @@ public class Main {
     private static final String PREFIX_FOR_SEARCH = "zew:activities:";
     private static final String SUGGESTION_KEY = "zew:suggest";
     private static int howManyResultsToShow = 3;
+    private static int autocompleteTries = 0;
 
     public static void main(String[] args){
         String host = "192.168.1.20";
@@ -58,6 +62,10 @@ public class Main {
                 int limitIndex = argList.indexOf("--limitsize");
                 howManyResultsToShow = Integer.parseInt(argList.get(limitIndex+1));
             }
+            if(argList.contains("--autocomplete")){
+                int autocompleteIndex = argList.indexOf("--autocomplete");
+                autocompleteTries = Integer.parseInt(argList.get(autocompleteIndex+1));
+            }
         }
         HostAndPort hnp = new HostAndPort(host,port);
         System.out.println("Connecting to "+hnp.toString());
@@ -77,8 +85,10 @@ public class Main {
         System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(hnp);
         prepareAutoComplete(hnp);
-        System.out.println("\nTesting auto-complete ...[try the letter h or l]");
-        testAutoComplete(hnp,5);
+        if(autocompleteTries>0) {
+            System.out.println("\nTesting auto-complete ...[try the letter h or l]");
+            testAutoComplete(hnp, autocompleteTries);
+        }
     }
 
     private static void testAutoComplete(HostAndPort hnp,int howManyTimes){
@@ -141,7 +151,9 @@ public class Main {
      * * @param hnp
      */
     private static void testJSONSearchQuery(HostAndPort hnp) {
+        ArrayList<String> perfTestResults = new ArrayList<>();
         try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+            long startTime = System.currentTimeMillis();
             String query = "@days:{Mon} -@location:('House')";
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
@@ -155,9 +167,12 @@ public class Main {
                             FieldName.of("$.description")
                     ).limit(0,howManyResultsToShow)
             );
+            perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
+            perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
 
             //Second query:
+            startTime = System.currentTimeMillis();
             query = "@days:{Mon Tue} @times:{08*}";
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
@@ -170,9 +185,12 @@ public class Main {
                             FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
                     ).limit(0,howManyResultsToShow)
             );
+            perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
+            perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
 
             //Third query:
+            startTime = System.currentTimeMillis();
             query = "@cost:[-inf 5.00]";
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
@@ -185,7 +203,9 @@ public class Main {
                             FieldName.of("$.cost").as("cost_in_us_dollars")
                     ).limit(0,howManyResultsToShow)
             );
+            perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
+            perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
 
             //TEST Simple AGGREGATION...
             ArrayList<String> groupByFields = new ArrayList<>();
@@ -199,6 +219,10 @@ public class Main {
                     .groupBy(groupByFields,reducerCollection).filter("@cost <= 9");
             AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
             printAggregateResultsToScreen(aggregationResult);
+        }
+        System.out.println("\n\tPerformance Results from this test run: \n");
+        for(String result : perfTestResults){
+            System.out.println(result);
         }
     }
 
