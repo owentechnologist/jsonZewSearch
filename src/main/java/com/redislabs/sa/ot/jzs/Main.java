@@ -22,7 +22,7 @@ import java.util.*;
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000"
  * to run the program loading a larger quantity of JSON activity Objects use the --quantity arg like this:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
- * Note that default limit on # of results is 1 result - to modify this use --limitsize like this:
+ * Note that default limit on # of results is 3 results - to modify this use --limitsize like this:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20"
  *
  */
@@ -77,7 +77,7 @@ public class Main {
         System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(hnp);
         prepareAutoComplete(hnp);
-        System.out.println("\nTesting auto-complete ...[try the letter g or k]");
+        System.out.println("\nTesting auto-complete ...[try the letter h or l]");
         testAutoComplete(hnp,5);
     }
 
@@ -102,7 +102,9 @@ public class Main {
 
 
     /*
-    This example provides auto-complete for species of animal, the activities, and the locations available
+    This example provides a single auto-complete key for: species of animal, the activities, and the locations available
+    Each category could live in its own auto-complete suggestion key which would allow for more discreet treatment of the suggestions
+    That would, however, require multiple calls to fetch the results as each key would need to be checked separately
      */
     private static void prepareAutoComplete(HostAndPort hnp){
         try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {

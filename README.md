@@ -5,6 +5,7 @@
 2) creating a RediSearch Index using JSON
 3) creating a Search Alias - because it allows for some additional decoupling between client and index details
 4) executing a search query and examining the returned results
+5) Allowing the user to test the auto-complete feature by typing characters and getting suggestions for event species, locations, and types
 
 ### To run the program execute the following replacing host and port values with your own:
 ```
