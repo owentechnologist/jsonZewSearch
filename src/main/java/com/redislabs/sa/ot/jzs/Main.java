@@ -27,6 +27,8 @@ import java.util.*;
  * To add a test of auto-complete suggestions you can also use this flag and determine how many times to prompt the user for input:
  * --autocomplete 3
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20 --autocomplete 2"
+ * To run queries against an existing dataset (loaded by a previous run) use --quantity 0
+ * Setting quantity to  0 will prevent the deletion and recreation of the index - and results will be consistent
  *  *
  */
 public class Main {
@@ -37,11 +39,11 @@ public class Main {
     private static final String SUGGESTION_KEY = "zew:suggest";
     private static int howManyResultsToShow = 3;
     private static int autocompleteTries = 0;
+    private static int quantity = 0;
 
     public static void main(String[] args){
         String host = "192.168.1.20";
         int port = 12000;
-        int quantity = 0;
         boolean isOnlyTwo = true;
         if(args.length>0){
             ArrayList<String> argList = new ArrayList<>(Arrays.asList(args));
@@ -70,9 +72,12 @@ public class Main {
         HostAndPort hnp = new HostAndPort(host,port);
         System.out.println("Connecting to "+hnp.toString());
         //Make sure index and alias are in place before we start writing data or querying:
+        // dropping and recreating the index can result in partial matches on existing data
         try{
-            dropIndex(hnp);
-            addIndex(hnp);
+            if(quantity>0) {
+                dropIndex(hnp);
+                addIndex(hnp);
+            }
         }catch(Throwable t){
             System.out.println(""+t.getMessage());
             try{

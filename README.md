@@ -22,7 +22,17 @@ mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.
 ```
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20"
 ```
-
+### To add a test of auto-complete suggestions you can also use this flag and determine how many times to prompt the user for input:
+* --autocomplete 3
+```
+mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20 --autocomplete 2"
+```
+## Setting quantity to 0 will prevent the deletion and recreation of the index - and results will be consistent
+* To run queries against an existing dataset (loaded by a previous run) use
+```
+  --quantity 0
+```
+  
 The JSON Objects represent fake Zewtopia Zoo events and look like this:
 ``` 
 {
