@@ -34,7 +34,9 @@ import java.util.*;
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 0 --limitsize 20 --autocomplete 2"
  * User and Password can also be provided as args:
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 0 --limitsize 2 --user default --password secretpassword12"
- *
+ * You can also specify an indexsleeptime value measured in milliseconds (this allows time for a newly created index to index pre-loaded documents from a different run)
+ * You can adjust this value to determine and match how long it takes to index whatever old docs exist in redis (new docs written after the index is created are indexed in realtime)
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --user default --password secretpassword12 --quantity 2 --limitsize 2 --indexsleeptime 30000"
  */
 public class Main {
 
@@ -51,6 +53,7 @@ public class Main {
         int port = 12000;
         String username = "default";
         String password = "";
+        int indexSleepTime = 0;
         boolean isOnlyTwo = true;  // by default write 2 JSON objects so there is something to query against
         if(args.length>0){
             ArrayList<String> argList = new ArrayList<>(Arrays.asList(args));
@@ -61,6 +64,10 @@ public class Main {
             if(argList.contains("--port")){
                 int portIndex = argList.indexOf("--port");
                 port = Integer.parseInt(argList.get(portIndex+1));
+            }
+            if(argList.contains("--indexsleeptime")){
+                int indexsleeptimeIndex = argList.indexOf("--indexsleeptime");
+                indexSleepTime = Integer.parseInt(argList.get(indexsleeptimeIndex+1));
             }
             if(argList.contains("--quantity")){
                 isOnlyTwo=false; // the user is specifying what number of JSON objects to write
@@ -100,7 +107,8 @@ public class Main {
             if(quantity>0) {
                 dropIndex(uri);
                 addIndex(uri);
-                Thread.sleep(10000); // give the index some time to catch up with any pre-existing data
+                System.out.println("Sleeping for "+indexSleepTime+" milliseconds to give the newly created index time to catch up with pre-loaded documents");
+                Thread.sleep(indexSleepTime); // give the index some time to catch up with any pre-existing data
             }
         }catch(Throwable t){
             System.out.println(""+t.getMessage());
@@ -320,7 +328,7 @@ public class Main {
                 .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.times.*.military").as("times"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
-                .addTagField("$.responsible-parties.*.phone",",").as("phone");
+                .addTextField("$.responsible-parties.*.name",.75).as("contact_name");
         IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
                 .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
