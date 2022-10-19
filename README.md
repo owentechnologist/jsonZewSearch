@@ -13,6 +13,7 @@ mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.
 ```
 
 ### To run the program loading a larger quantity of JSON activity Objects use the --quantity arg like this:
+* If you do not specify any quantity, the default of 2 objects will be written
 
 ```
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000"
@@ -28,9 +29,18 @@ mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20 --autocomplete 2"
 ```
 ## Setting quantity to 0 will prevent the deletion and recreation of the index - and results will be consistent
-* To run queries against an existing dataset (loaded by a previous run) use
+* To run queries against an existing dataset (loaded by a previous run) use --quantity 0 
+* Setting quantity to  0 will prevent the deletion and recreation of the index - and results will be consistent
 ```
-  --quantity 0
+--quantity 0
+```
+like this:
+```
+mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 0 --limitsize 20 --autocomplete 2"
+```
+## User and Password can also be provided as args:
+```
+mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 0 --limitsize 2 --user default --password secretpassword12"
 ```
   
 The JSON Objects represent fake Zewtopia Zoo events and look like this:
