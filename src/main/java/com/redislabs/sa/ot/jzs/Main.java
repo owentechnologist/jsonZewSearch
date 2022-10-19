@@ -100,7 +100,7 @@ public class Main {
             if(quantity>0) {
                 dropIndex(uri);
                 addIndex(uri);
-                Thread.sleep(2000); // give the index some time to catch up with any pre-existing data
+                Thread.sleep(10000); // give the index some time to catch up with any pre-existing data
             }
         }catch(Throwable t){
             System.out.println(""+t.getMessage());
@@ -165,7 +165,7 @@ public class Main {
     private static void dropIndex(URI uri) {
         try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             jedis.ftDropIndex(INDEX_1_NAME);
-        }catch(Throwable t){t.printStackTrace();}
+        }catch(Throwable t){System.out.println("While attempting to drop index "+INDEX_1_NAME+"    >>> "+t.getMessage());}
     }
 
     /*
@@ -319,7 +319,8 @@ public class Main {
                 .addSortableNumericField("$.cost").as("cost")
                 .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.times.*.military").as("times"), Schema.FieldType.TAG))
-                .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT));
+                .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
+                .addTagField("$.responsible-parties.*.phone",",").as("phone");
         IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
                 .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
