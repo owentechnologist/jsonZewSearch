@@ -121,8 +121,8 @@ public class Main {
         loadData(uri,isOnlyTwo,quantity);
         System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(uri);
-        prepareAutoComplete(uri);
         if(autocompleteTries>0) {
+            prepareAutoComplete(uri);
             System.out.println("\nTesting auto-complete ...[try the letter h or l]");
             testAutoComplete(uri, autocompleteTries);
         }
@@ -255,7 +255,8 @@ public class Main {
                     "@location:Gorilla @location:East -@days:{Tue Wed Thu}")
                     .groupBy(groupByFields,reducerCollection).filter("@cost <= 9");
             AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
-            printAggregateResultsToScreen(aggregationResult);
+            String queryForDisplay = "FT.AGGREGATE idxa_zew_events \"@event_name:Petting @cost:[1.00 +inf] @location:Gorilla @location:East -@days:{Tue Wed Thu}\" GROUPBY 3 @cost @location @event_name REDUCE COUNT 0 AS event_match_count FILTER @cost <= 9";
+            printAggregateResultsToScreen(queryForDisplay,aggregationResult);
         }
         System.out.println("\n\tPerformance Results from this test run: \n");
         for(String result : perfTestResults){
@@ -263,8 +264,8 @@ public class Main {
         }
     }
 
-    private static void printAggregateResultsToScreen(AggregationResult result){
-        System.out.println("\n\tFired Aggregation Query -  received "+result.getTotalResults()+" results:\n");
+    private static void printAggregateResultsToScreen(String query,AggregationResult result){
+        System.out.println("\nFired Aggregation Query:\n"+query+"\n\t -  received "+result.getTotalResults()+" results:\n");
         List<Map<String, Object>> r = result.getResults();
         System.out.println("The number of rows returned is affected by any filters applied.  Returning this many: "+r.size());
         for(int row = 0;row < r.size();row++){
