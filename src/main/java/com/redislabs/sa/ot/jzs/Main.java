@@ -191,7 +191,7 @@ public class Main {
         ArrayList<String> perfTestResults = new ArrayList<>();
         try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             long startTime = System.currentTimeMillis();
-            String query = "@days:{Sat} @days:{Sun} -@location:('House')";
+            String query = "@days:{Sat} @days:{Sun} @times:{09*} -@location:('House') ";
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
@@ -210,7 +210,7 @@ public class Main {
 
             //Second query:
             startTime = System.currentTimeMillis();
-            query = "@days:{Mon | Tue} @times:{08*} -@days:{Sun}";
+            query = "@contact_name:(Jo* Hu*)";
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
