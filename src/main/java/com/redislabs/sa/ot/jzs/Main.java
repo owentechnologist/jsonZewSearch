@@ -8,6 +8,8 @@ import redis.clients.jedis.search.aggr.*;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.*;
 
 /**
@@ -27,9 +29,12 @@ import java.util.*;
  * To add a test of auto-complete suggestions you can also use this flag and determine how many times to prompt the user for input:
  * --autocomplete 3
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 200000 --limitsize 20 --autocomplete 2"
- * To run queries against an existing dataset (loaded by a previous run) use --quantity 0
+ * To run queries against an existing dataset (loaded by a previous run) use --quantity 0 (or do not specify any quantity and the default of 2 objects will be written)
  * Setting quantity to  0 will prevent the deletion and recreation of the index - and results will be consistent
- *  *
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 0 --limitsize 20 --autocomplete 2"
+ * User and Password can also be provided as args:
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --quantity 0 --limitsize 2 --user default --password secretpassword12"
+ *
  */
 public class Main {
 
@@ -44,7 +49,9 @@ public class Main {
     public static void main(String[] args){
         String host = "192.168.1.20";
         int port = 12000;
-        boolean isOnlyTwo = true;
+        String username = "default";
+        String password = "";
+        boolean isOnlyTwo = true;  // by default write 2 JSON objects so there is something to query against
         if(args.length>0){
             ArrayList<String> argList = new ArrayList<>(Arrays.asList(args));
             if(argList.contains("--host")){
@@ -56,7 +63,7 @@ public class Main {
                 port = Integer.parseInt(argList.get(portIndex+1));
             }
             if(argList.contains("--quantity")){
-                isOnlyTwo=false;
+                isOnlyTwo=false; // the user is specifying what number of JSON objects to write
                 int quantityIndex = argList.indexOf("--quantity");
                 quantity = Integer.parseInt(argList.get(quantityIndex+1));
             }
@@ -68,36 +75,53 @@ public class Main {
                 int autocompleteIndex = argList.indexOf("--autocomplete");
                 autocompleteTries = Integer.parseInt(argList.get(autocompleteIndex+1));
             }
+            if(argList.contains("--username")){
+                int userNameIndex = argList.indexOf("--username");
+                username = argList.get(userNameIndex+1);
+            }
+            if(argList.contains("--password")){
+                int passwordIndex = argList.indexOf("--password");
+                password = argList.get(passwordIndex + 1);
+            }
         }
         HostAndPort hnp = new HostAndPort(host,port);
         System.out.println("Connecting to "+hnp.toString());
+        URI uri = null;
+        try {
+            if(!("".equalsIgnoreCase(password))){
+                uri = new URI("redis://" + username + ":" + password + "@" + hnp.getHost() + ":" + hnp.getPort());
+            }else{
+                uri = new URI("redis://" + hnp.getHost() + ":" + hnp.getPort());
+            }
+        }catch(URISyntaxException use){use.printStackTrace();System.exit(1);}
         //Make sure index and alias are in place before we start writing data or querying:
         // dropping and recreating the index can result in partial matches on existing data
         try{
             if(quantity>0) {
-                dropIndex(hnp);
-                addIndex(hnp);
+                dropIndex(uri);
+                addIndex(uri);
+                Thread.sleep(2000); // give the index some time to catch up with any pre-existing data
             }
         }catch(Throwable t){
             System.out.println(""+t.getMessage());
             try{
-                Jedis jedis = new Jedis(hnp.getHost(), hnp.getPort(), 500);
+                Jedis jedis = new Jedis(uri, 500);
                 System.out.println("There are "+jedis.dbSize()+" keys in the redis database");
             }catch(Throwable t2){System.out.println(""+t2.getMessage());}
         }
         System.out.println("LOADING JSON DATA...");
-        loadData(hnp,isOnlyTwo,quantity);
+        loadData(uri,isOnlyTwo,quantity);
         System.out.println("\n\nTESTING SEARCH QUERY ...");
-        testJSONSearchQuery(hnp);
-        prepareAutoComplete(hnp);
+        testJSONSearchQuery(uri);
+        prepareAutoComplete(uri);
         if(autocompleteTries>0) {
             System.out.println("\nTesting auto-complete ...[try the letter h or l]");
-            testAutoComplete(hnp, autocompleteTries);
+            testAutoComplete(uri, autocompleteTries);
         }
     }
 
-    private static void testAutoComplete(HostAndPort hnp,int howManyTimes){
-        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+    private static void testAutoComplete(URI uri,int howManyTimes){
+        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             BufferedReader reader = new BufferedReader(
                     new InputStreamReader(System.in));
             for(int x=0;x<howManyTimes;x++){
@@ -121,8 +145,8 @@ public class Main {
     Each category could live in its own auto-complete suggestion key which would allow for more discreet treatment of the suggestions
     That would, however, require multiple calls to fetch the results as each key would need to be checked separately
      */
-    private static void prepareAutoComplete(HostAndPort hnp){
-        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+    private static void prepareAutoComplete(URI uri){
+        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             for(String animal:JsonZewActivityBuilder.animalSpecies) {
                 jedis.ftSugAdd(SUGGESTION_KEY,animal,1.0 );
             }
@@ -138,8 +162,8 @@ public class Main {
         }catch(Throwable t){t.printStackTrace();}
     }
 
-    private static void dropIndex(HostAndPort hnp) {
-        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+    private static void dropIndex(URI uri) {
+        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             jedis.ftDropIndex(INDEX_1_NAME);
         }catch(Throwable t){t.printStackTrace();}
     }
@@ -155,11 +179,11 @@ public class Main {
      * "location":"Gorilla House South"}
      * * @param hnp
      */
-    private static void testJSONSearchQuery(HostAndPort hnp) {
+    private static void testJSONSearchQuery(URI uri) {
         ArrayList<String> perfTestResults = new ArrayList<>();
-        try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             long startTime = System.currentTimeMillis();
-            String query = "@days:{Mon} -@location:('House')";
+            String query = "@days:{Sat} @days:{Sun} -@location:('House')";
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
@@ -178,7 +202,7 @@ public class Main {
 
             //Second query:
             startTime = System.currentTimeMillis();
-            query = "@days:{Mon Tue} @times:{08*}";
+            query = "@days:{Mon | Tue} @times:{08*} -@days:{Sun}";
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
@@ -277,7 +301,7 @@ public class Main {
     // This next query returns the bonobo lecture with only the first time from the array of times (there could be more):
     // FT.SEARCH idx_zew_events "@days:{Mon} -@location:('House')" return 3 event_name times location
 
-    private static void addIndex(HostAndPort hnp){
+    private static void addIndex(URI uri){
         /* Sample JSON object:
         [{"times":[{"military":"0800","civilian":"8 AM"},{"military":"1500","civilian":"3 PM"},{"military":"2200","civilian":"10 PM"}],
         "responsible-parties":[{"phone":"715-876-5522","name":"Duncan Mills","email":"dmilla@zew.org"}],
@@ -289,7 +313,7 @@ public class Main {
         $.location AS location TEXT PHONETIC dm:en
         $.responsible-parties.*.phone AS phone TEXT $.times.*.military as times TAG
          */
-        JedisPooled jedisPooled = new JedisPooled(new ConnectionPoolConfig(), hnp.getHost(), hnp.getPort(), 2000);
+        JedisPooled jedisPooled = new JedisPooled(new ConnectionPoolConfig(), uri, 2000);
 
         Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
                 .addSortableNumericField("$.cost").as("cost")
@@ -313,9 +337,9 @@ public class Main {
 
 
     //load JSON Objects for testing
-    private static void loadData(HostAndPort hnp,boolean onlyLoadTwoObjects,int howManyObjects){
+    private static void loadData(URI uri,boolean onlyLoadTwoObjects,int howManyObjects){
         if(onlyLoadTwoObjects) {
-            try (UnifiedJedis jedis = new UnifiedJedis(hnp)) {
+            try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
                 jedis.del("zew:activities:gf");
                 jedis.del("zew:activities:bl");
 
@@ -394,7 +418,7 @@ public class Main {
             }
         }
         else{
-            try (Jedis jedis = new Jedis(hnp)) {
+            try (Jedis jedis = new Jedis(uri)) {
                 int howManyBatches = (howManyObjects/200)>0?(howManyObjects/200)+1:1;//makes sure at least 1 batch gets fired
                 int countDownOfObjects = howManyObjects;
                 System.out.println("Writing "+howManyObjects+" objects to Redis in "+howManyBatches+" batches of 200 or less...");
@@ -491,5 +515,4 @@ class JsonZewActivityBuilder{
         obj.put("responsible-parties", hostsHolder);
         return obj;
     }
-
 }
