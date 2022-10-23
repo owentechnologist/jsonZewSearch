@@ -81,3 +81,5 @@ The JSON Objects represent fake Zewtopia Zoo events and look like this:
 }
 ```
 
+### There is a separate project that by default uses this projects' index and dataset to do basic multi-threaded performance testing.  That project can be found here:
+https://github.com/owentechnologist/multiThreadSearchTest 
