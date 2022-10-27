@@ -195,12 +195,12 @@ public class Main {
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times[*].civilian").as("civilian"), // only returning 1st time in array due to use of *
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("$.responsible-parties.hosts.[0].email").as("contact_email"), // Returning the first email only even though there could be more
                             FieldName.of("$.responsible-parties.hosts.[0].phone").as("contact_phone"), // Returning the first phone only even though there could be more
                             FieldName.of("event_name"), // only a single value exists in a document
-                            FieldName.of("$.times[2].military").as("military1"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times[*].military").as("military"), // only returning 1st time in array due to use of *
                             FieldName.of("$.description")
                     ).limit(0,howManyResultsToShow)
             );
@@ -327,9 +327,9 @@ public class Main {
         Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
                 .addSortableNumericField("$.cost").as("cost")
                 .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
-                .addField(new Schema.Field(FieldName.of("$.times.*.military").as("times"), Schema.FieldType.TAG))
+                .addField(new Schema.Field(FieldName.of("$.times[*].military").as("times"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
-                .addTextField("$.responsible-parties.[0].name",.75).as("contact_name");
+                .addTextField("$.responsible-parties.[0].name",.75).as("contact_name"); //only indexing first occurring name until search 2.6.1 allows more
         IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
                 .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
