@@ -232,7 +232,7 @@ public class Main {
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times.[0].civilian").as("first_event_time"), // only returning 1st time in array due to use of *
                             FieldName.of("$.times.[1].civilian").as("second_event_time"), // only returning 2nd time in array if it exists
                             FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
                             FieldName.of("$.days").as("days"), // multiple days may be returned
@@ -329,7 +329,7 @@ public class Main {
                 .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.times[*].military").as("times"), Schema.FieldType.TAG))
                 .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
-                .addTextField("$.responsible-parties.[0].name",.75).as("contact_name"); //only indexing first occurring name until search 2.6.1 allows more
+                .addTextField("$.responsible-parties.hosts[*].name",.75).as("contact_name"); //use with search 2.6.1 allows TEXT in multivalues
         IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
                 .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
