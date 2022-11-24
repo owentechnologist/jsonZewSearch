@@ -37,6 +37,8 @@ import java.util.*;
  * You can also specify an indexsleeptime value measured in milliseconds (this allows time for a newly created index to index pre-loaded documents from a different run)
  * You can adjust this value to determine and match how long it takes to index whatever old docs exist in redis (new docs written after the index is created are indexed in realtime)
  * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --user default --password secretpassword12 --quantity 2 --limitsize 2 --indexsleeptime 30000"
+ * If you want to try out JSON multi-value search https://github.com/RediSearch/RediSearch/releases/tag/v2.6.1 and have search V2.6.1 and JSON 2.4.0 or better installed you can specify --multivalue true
+ * mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --user default --password secretpassword12 --quantity 2 --multivalue true --limitsize 2 --indexsleeptime 30000"
  */
 public class Main {
 
@@ -47,6 +49,8 @@ public class Main {
     private static int howManyResultsToShow = 3;
     private static int autocompleteTries = 0;
     private static int quantity = 0;
+    private static boolean multiValueSearch = false;
+    private static int dialectVersion = 2;//Dialect 3 is needed for complete multivalue results
 
     public static void main(String[] args){
         String host = "192.168.1.20";
@@ -90,6 +94,13 @@ public class Main {
                 int passwordIndex = argList.indexOf("--password");
                 password = argList.get(passwordIndex + 1);
             }
+            if(argList.contains("--multivalue")){
+                int multiValueIndex = argList.indexOf("--multivalue");
+                multiValueSearch = Boolean.parseBoolean(argList.get(multiValueIndex+1));
+                if(multiValueSearch) {
+                    dialectVersion = 3;
+                }
+            }
         }
         HostAndPort hnp = new HostAndPort(host,port);
         System.out.println("Connecting to "+hnp.toString());
@@ -119,12 +130,21 @@ public class Main {
         }
         System.out.println("LOADING JSON DATA...");
         loadData(uri,isOnlyTwo,quantity);
+        testJedisConnection(uri);
         System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(uri);
         if(autocompleteTries>0) {
             prepareAutoComplete(uri);
             System.out.println("\nTesting auto-complete ...[try the letter h or l]");
             testAutoComplete(uri, autocompleteTries);
+        }
+    }
+
+    private static void testJedisConnection(URI uri) {
+        System.out.println("\nURI == "+uri.getHost()+":"+uri.getPort());
+        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+            System.out.println("Testing connection by executing 'DBSIZE' response is: "+ jedis.dbSize());
+            System.out.println("Testing index state by executing 'FT.INFO' "+INDEX_1_NAME+" response is: "+jedis.ftInfo(INDEX_1_NAME));
         }
     }
 
@@ -191,18 +211,20 @@ public class Main {
         ArrayList<String> perfTestResults = new ArrayList<>();
         try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
             long startTime = System.currentTimeMillis();
-            String query = "@days:{Sat} @days:{Sun} @times:{09*} -@location:('House') ";
+            String query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times[*].civilian").as("civilian"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times[?(@.military==\"1400\" || @.military==\"2000\")]")
+                                    .as("matched_times"),
+                            FieldName.of("$.times[*].civilian").as("civilian"), //  dialect determines multiple or single results
                             FieldName.of("$.days").as("days"), // multiple days may be returned
-                            FieldName.of("$.responsible-parties.hosts.[0].email").as("contact_email"), // Returning the first email only even though there could be more
-                            FieldName.of("$.responsible-parties.hosts.[0].phone").as("contact_phone"), // Returning the first phone only even though there could be more
+                            FieldName.of("$.responsible-parties.hosts.[*].email").as("contact_email"), //  dialect determines multiple or single results
+                            FieldName.of("$.responsible-parties.hosts.[*].phone").as("contact_phone"), //  dialect determines multiple or single results
                             FieldName.of("event_name"), // only a single value exists in a document
-                            FieldName.of("$.times[*].military").as("military"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times[*].military").as("military"), //  dialect determines multiple or single results
                             FieldName.of("$.description")
-                    ).limit(0,howManyResultsToShow)
+                    ).limit(0,howManyResultsToShow).dialect(dialectVersion)
             );
             perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
@@ -210,17 +232,18 @@ public class Main {
 
             //Second query:
             startTime = System.currentTimeMillis();
-            query = "@contact_name:(Jo* Hu*)";
+            query = "@contact_name:(Jo* Hu*) @times:{2000}";
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.*.civilian").as("first_event_time"), // only returning 1st time in array due to use of *
+                            FieldName.of("$.times[*].civilian").as("first_event_time"), // Dialect determines if this is a single result
                             FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
+                            FieldName.of("$.times[?(@.military==\"2000\")]").as("matched_times"),//Dialect determines if this is a single result
                             FieldName.of("$.days").as("days"), // multiple days may be returned
-                            FieldName.of("$.responsible-parties.hosts").as("hosts"),
+                            FieldName.of("$.responsible-parties[*].hosts").as("hosts"),//Dialect determines if this is a single result
                             FieldName.of("event_name"), // only a single value exists in a document
                             FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
-                    ).limit(0,howManyResultsToShow)
+                    ).limit(0,howManyResultsToShow).dialect(dialectVersion)
             );
             perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
@@ -232,13 +255,11 @@ public class Main {
             result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
                             FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.[0].civilian").as("first_event_time"), // only returning 1st time in array due to use of *
-                            FieldName.of("$.times.[1].civilian").as("second_event_time"), // only returning 2nd time in array if it exists
-                            FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
+                            FieldName.of("$.times.[*].civilian").as("all_times"), //  dialect determines multiple or single results
                             FieldName.of("$.days").as("days"), // multiple days may be returned
                             FieldName.of("event_name"), // only a single value exists in a document
                             FieldName.of("$.cost").as("cost_in_us_dollars")
-                    ).limit(0,howManyResultsToShow)
+                    ).limit(0,howManyResultsToShow).dialect(dialectVersion)
             );
             perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
@@ -253,7 +274,7 @@ public class Main {
             reducerCollection.add(Reducers.count().as("event_match_count"));
             AggregationBuilder builder = new AggregationBuilder("@event_name:Petting @cost:[1.00 +inf] " +
                     "@location:Gorilla @location:East -@days:{Tue Wed Thu}")
-                    .groupBy(groupByFields,reducerCollection).filter("@cost <= 9");
+                    .groupBy(groupByFields,reducerCollection).filter("@cost <= 9").dialect(dialectVersion);
             AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
             String queryForDisplay = "FT.AGGREGATE idxa_zew_events \"@event_name:Petting @cost:[1.00 +inf] @location:Gorilla @location:East -@days:{Tue Wed Thu}\" GROUPBY 3 @cost @location @event_name REDUCE COUNT 0 AS event_match_count FILTER @cost <= 9";
             printAggregateResultsToScreen(queryForDisplay,aggregationResult);
@@ -281,7 +302,7 @@ public class Main {
     }
 
     private static void printResultsToScreen(String query,SearchResult result){
-        System.out.println("\n\tFired Query - \""+query+"\"\n Received a total of "+result.getTotalResults()+" results.\nDisplaying "+howManyResultsToShow+" results:\n");
+        System.out.println("\n\tFired Query - \""+query+"\"\n Received a total of "+result.getTotalResults()+" results.\nDisplaying a maximum of "+howManyResultsToShow+" results:\n");
 
         List<Document> doclist = result.getDocuments();
         Iterator<Document> iterator = doclist.iterator();
@@ -322,27 +343,28 @@ public class Main {
         $.location AS location TEXT PHONETIC dm:en
         $.responsible-parties.*.phone AS phone TEXT $.times.*.military as times TAG
          */
-        JedisPooled jedisPooled = new JedisPooled(new ConnectionPoolConfig(), uri, 2000);
 
-        Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
-                .addSortableNumericField("$.cost").as("cost")
-                .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
-                .addField(new Schema.Field(FieldName.of("$.times[*].military").as("times"), Schema.FieldType.TAG))
-                .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
-                .addTextField("$.responsible-parties.hosts[*].name",.75).as("contact_name"); //use with search 2.6.1 allows TEXT in multivalues
-        IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
-                .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
+        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+            Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
+                    .addSortableNumericField("$.cost").as("cost")
+                    .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
+                    .addField(new Schema.Field(FieldName.of("$.times[*].military").as("times"), Schema.FieldType.TAG))
+                    .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
+                    .addTextField("$.responsible-parties.hosts[*].name", .75).as("contact_name"); //use with search 2.6.1 allows TEXT in multivalues
+            IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
+                    .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
-        jedisPooled.ftCreate(INDEX_1_NAME,IndexOptions.defaultOptions().setDefinition(indexDefinition),schema);
-        //AND THEN: add schema alias so we can toggle between indexes:
+            jedis.ftCreate(INDEX_1_NAME, IndexOptions.defaultOptions().setDefinition(indexDefinition), schema);
+            //AND THEN: add schema alias so we can toggle between indexes:
         /*
         Added use of search index Alias (this allows for possible
         re-assigning of the alias to an alternate index that perhaps targets a different underlying dataset
         - maybe including additional or entirely different prefixes
         This example doesn't demonstrate that reassignment of the alias - just its effective use as a layer of indirection.
          */
-        jedisPooled.ftAliasAdd(INDEX_ALIAS_NAME,INDEX_1_NAME);
-        System.out.println("Successfully created search index and search index alias");
+            jedis.ftAliasAdd(INDEX_ALIAS_NAME, INDEX_1_NAME);
+            System.out.println("Successfully created search index and search index alias");
+        }
     }
 
 

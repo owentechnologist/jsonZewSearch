@@ -49,6 +49,13 @@ mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.
 mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --user default --password secretpassword12 --quantity 2 --limitsize 2 --indexsleeptime 30000"
 ```
 
+* If you want to try out JSON multi-value search https://github.com/RediSearch/RediSearch/releases/tag/v2.6.1 and have search V2.6.1 and JSON 2.4.0 or better installed you can specify --multivalue true 
+```
+mvn compile exec:java -Dexec.cleanupDaemonThreads=false -Dexec.args="--host 192.168.1.21 --port 12000 --user default --password secretpassword12 --quantity 2 --multivalue true --limitsize 2 --indexsleeptime 30000"
+```
+
+
+
 The JSON Objects represent fake Zewtopia Zoo events and look like this:
 ``` 
 {
