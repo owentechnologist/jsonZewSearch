@@ -115,7 +115,7 @@ public class Main {
         //Make sure index and alias are in place before we start writing data or querying:
         // dropping and recreating the index can result in partial matches on existing data
         try{
-            if(quantity>0) {
+            if(quantity>0||isOnlyTwo) {
                 dropIndex(uri);
                 addIndex(uri);
                 System.out.println("Sleeping for "+indexSleepTime+" milliseconds to give the newly created index time to catch up with pre-loaded documents");
