@@ -1,8 +1,10 @@
 package com.redislabs.sa.ot.jzs;
 import com.github.javafaker.Faker;
+import org.apache.commons.pool2.impl.GenericObjectPoolConfig;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import redis.clients.jedis.*;
+import redis.clients.jedis.providers.PooledConnectionProvider;
 import redis.clients.jedis.search.*;
 import redis.clients.jedis.search.aggr.*;
 
@@ -10,6 +12,7 @@ import java.io.BufferedReader;
 import java.io.InputStreamReader;
 import java.net.URI;
 import java.net.URISyntaxException;
+import java.time.Duration;
 import java.util.*;
 
 /**
@@ -51,89 +54,96 @@ public class Main {
     private static int quantity = 0;
     private static boolean multiValueSearch = false;
     private static int dialectVersion = 2;//Dialect 3 is needed for complete multivalue results
+    private static ConnectionHelper connectionHelper = null;
 
-    public static void main(String[] args){
+    public static void main(String[] args) {
         String host = "192.168.1.20";
         int port = 12000;
         String username = "default";
         String password = "";
         int indexSleepTime = 0;
         boolean isOnlyTwo = true;  // by default write 2 JSON objects so there is something to query against
-        if(args.length>0){
+        if (args.length > 0) {
             ArrayList<String> argList = new ArrayList<>(Arrays.asList(args));
-            if(argList.contains("--host")){
+            if (argList.contains("--host")) {
                 int hostIndex = argList.indexOf("--host");
-                host = argList.get(hostIndex+1);
+                host = argList.get(hostIndex + 1);
             }
-            if(argList.contains("--port")){
+            if (argList.contains("--port")) {
                 int portIndex = argList.indexOf("--port");
-                port = Integer.parseInt(argList.get(portIndex+1));
+                port = Integer.parseInt(argList.get(portIndex + 1));
             }
-            if(argList.contains("--indexsleeptime")){
+            if (argList.contains("--indexsleeptime")) {
                 int indexsleeptimeIndex = argList.indexOf("--indexsleeptime");
-                indexSleepTime = Integer.parseInt(argList.get(indexsleeptimeIndex+1));
+                indexSleepTime = Integer.parseInt(argList.get(indexsleeptimeIndex + 1));
             }
-            if(argList.contains("--quantity")){
-                isOnlyTwo=false; // the user is specifying what number of JSON objects to write
+            if (argList.contains("--quantity")) {
+                isOnlyTwo = false; // the user is specifying what number of JSON objects to write
                 int quantityIndex = argList.indexOf("--quantity");
-                quantity = Integer.parseInt(argList.get(quantityIndex+1));
+                quantity = Integer.parseInt(argList.get(quantityIndex + 1));
             }
-            if(argList.contains("--limitsize")){
+            if (argList.contains("--limitsize")) {
                 int limitIndex = argList.indexOf("--limitsize");
-                howManyResultsToShow = Integer.parseInt(argList.get(limitIndex+1));
+                howManyResultsToShow = Integer.parseInt(argList.get(limitIndex + 1));
             }
-            if(argList.contains("--autocomplete")){
+            if (argList.contains("--autocomplete")) {
                 int autocompleteIndex = argList.indexOf("--autocomplete");
-                autocompleteTries = Integer.parseInt(argList.get(autocompleteIndex+1));
+                autocompleteTries = Integer.parseInt(argList.get(autocompleteIndex + 1));
             }
-            if(argList.contains("--username")){
-                int userNameIndex = argList.indexOf("--username");
-                username = argList.get(userNameIndex+1);
+            if (argList.contains("--user")) {
+                int userNameIndex = argList.indexOf("--user");
+                username = argList.get(userNameIndex + 1);
             }
-            if(argList.contains("--password")){
+            if (argList.contains("--password")) {
                 int passwordIndex = argList.indexOf("--password");
                 password = argList.get(passwordIndex + 1);
             }
-            if(argList.contains("--multivalue")){
+            if (argList.contains("--multivalue")) {
                 int multiValueIndex = argList.indexOf("--multivalue");
-                multiValueSearch = Boolean.parseBoolean(argList.get(multiValueIndex+1));
-                if(multiValueSearch) {
+                multiValueSearch = Boolean.parseBoolean(argList.get(multiValueIndex + 1));
+                if (multiValueSearch) {
                     dialectVersion = 3;
                 }
             }
         }
-        HostAndPort hnp = new HostAndPort(host,port);
-        System.out.println("Connecting to "+hnp.toString());
+        HostAndPort hnp = new HostAndPort(host, port);
+        System.out.println("Connecting to " + hnp.toString());
         URI uri = null;
         try {
-            if(!("".equalsIgnoreCase(password))){
+            if (!("".equalsIgnoreCase(password))) {
                 uri = new URI("redis://" + username + ":" + password + "@" + hnp.getHost() + ":" + hnp.getPort());
-            }else{
+            } else {
                 uri = new URI("redis://" + hnp.getHost() + ":" + hnp.getPort());
             }
-        }catch(URISyntaxException use){use.printStackTrace();System.exit(1);}
+        } catch (URISyntaxException use) {
+            use.printStackTrace();
+            System.exit(1);
+        }
+        connectionHelper = new ConnectionHelper(uri);
         //Make sure index and alias are in place before we start writing data or querying:
         // dropping and recreating the index can result in partial matches on existing data
-        try{
-            if(quantity>0||isOnlyTwo) {
+        try {
+            if (quantity > 0 || isOnlyTwo) {
                 dropIndex(uri);
                 addIndex(uri);
-                System.out.println("Sleeping for "+indexSleepTime+" milliseconds to give the newly created index time to catch up with pre-loaded documents");
+                System.out.println("Sleeping for " + indexSleepTime + " milliseconds to give the newly created index time to catch up with pre-loaded documents");
                 Thread.sleep(indexSleepTime); // give the index some time to catch up with any pre-existing data
             }
-        }catch(Throwable t){
-            System.out.println(""+t.getMessage());
-            try{
-                Jedis jedis = new Jedis(uri, 500);
-                System.out.println("There are "+jedis.dbSize()+" keys in the redis database");
-            }catch(Throwable t2){System.out.println(""+t2.getMessage());}
+        } catch (Throwable t) {
+            System.out.println("" + t.getMessage());
+            try {
+                JedisPooled jedis = connectionHelper.getPooledJedis();
+                System.out.println("There are " + jedis.dbSize() + " keys in the redis database");
+            } catch (Throwable t2) {
+                System.out.println("" + t2.getMessage());
+            }
         }
         System.out.println("LOADING JSON DATA...");
-        loadData(uri,isOnlyTwo,quantity);
+        loadData(uri, isOnlyTwo, quantity);
         testJedisConnection(uri);
         System.out.println("\n\nTESTING SEARCH QUERY ...");
         testJSONSearchQuery(uri);
-        if(autocompleteTries>0) {
+        if (autocompleteTries > 0) {
             prepareAutoComplete(uri);
             System.out.println("\nTesting auto-complete ...[try the letter h or l]");
             testAutoComplete(uri, autocompleteTries);
@@ -141,40 +151,37 @@ public class Main {
     }
 
     private static void testJedisConnection(URI uri) {
-        System.out.println("\nURI == "+uri.getHost()+":"+uri.getPort());
-        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
-            System.out.println("Testing connection by executing 'DBSIZE' response is: "+ jedis.dbSize());
-            System.out.println("Testing index state by executing 'FT.INFO' "+INDEX_1_NAME+" response is: "+jedis.ftInfo(INDEX_1_NAME));
-        }
+        System.out.println("\nURI == " + uri.getHost() + ":" + uri.getPort());
+        JedisPooled jedis = connectionHelper.getPooledJedis();
+        System.out.println("Testing connection by executing 'DBSIZE' response is: " + jedis.dbSize());
+        System.out.println("Testing index state by executing 'FT.INFO' " + INDEX_1_NAME + " response is: " + jedis.ftInfo(INDEX_1_NAME));
     }
 
-    private static void testAutoComplete(URI uri,int howManyTimes){
-        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
-            BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(System.in));
-            for(int x=0;x<howManyTimes;x++){
-                System.out.println("Please type part of an animal Species name and hit enter to receive auto-complete suggestions.");
-                String input = reader.readLine();
-                List<String> stringList = jedis.ftSugGet(SUGGESTION_KEY, input);
-                System.out.println("Did you mean one of these:");
-                for(String suggestion : stringList){
-                    System.out.print("[ "+suggestion+" ],");
-                }
-                System.out.println("\n*****  End of Suggestions *****");
+    private static void testAutoComplete(URI uri, int howManyTimes) {
+        JedisPooled jedis = connectionHelper.getPooledJedis();
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(System.in));
+        for (int x = 0; x < howManyTimes; x++) {
+            System.out.println("Please type part of an animal Species name and hit enter to receive auto-complete suggestions.");
+            String input = null;
+            try{
+                input = reader.readLine();
+            }catch(Throwable t){System.out.println("\nNOW ITS ALL MESSED UP! "+t.getMessage());}
+            List<String> stringList = jedis.ftSugGet(SUGGESTION_KEY, input);
+            System.out.println("Did you mean one of these:");
+            for (String suggestion : stringList) {
+                System.out.print("[ " + suggestion + " ],");
             }
-        }catch(Throwable t){
-            System.out.println(t.getMessage());
+            System.out.println("\n*****  End of Suggestions *****");
         }
     }
-
-
     /*
     This example provides a single auto-complete key for: species of animal, the activities, and the locations available
     Each category could live in its own auto-complete suggestion key which would allow for more discreet treatment of the suggestions
     That would, however, require multiple calls to fetch the results as each key would need to be checked separately
      */
     private static void prepareAutoComplete(URI uri){
-        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+        JedisPooled jedis = connectionHelper.getPooledJedis();
             for(String animal:JsonZewActivityBuilder.animalSpecies) {
                 jedis.ftSugAdd(SUGGESTION_KEY,animal,1.0 );
             }
@@ -187,11 +194,11 @@ public class Main {
             for(String direction :JsonZewActivityBuilder.locationDirections){
                 jedis.ftSugAdd(SUGGESTION_KEY,direction,.5 );
             }
-        }catch(Throwable t){t.printStackTrace();}
     }
 
     private static void dropIndex(URI uri) {
-        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+        JedisPooled jedis = connectionHelper.getPooledJedis();
+        try{
             jedis.ftDropIndex(INDEX_1_NAME);
         }catch(Throwable t){System.out.println("While attempting to drop index "+INDEX_1_NAME+"    >>> "+t.getMessage());}
     }
@@ -209,7 +216,7 @@ public class Main {
      */
     private static void testJSONSearchQuery(URI uri) {
         ArrayList<String> perfTestResults = new ArrayList<>();
-        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+        JedisPooled jedis = connectionHelper.getPooledJedis();
             long startTime = System.currentTimeMillis();
             String query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
@@ -278,10 +285,10 @@ public class Main {
             AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
             String queryForDisplay = "FT.AGGREGATE idxa_zew_events \"@event_name:Petting @cost:[1.00 +inf] @location:Gorilla @location:East -@days:{Tue Wed Thu}\" GROUPBY 3 @cost @location @event_name REDUCE COUNT 0 AS event_match_count FILTER @cost <= 9";
             printAggregateResultsToScreen(queryForDisplay,aggregationResult);
-        }
+
         System.out.println("\n\tPerformance Results from this test run: \n");
-        for(String result : perfTestResults){
-            System.out.println(result);
+        for(String perfResults : perfTestResults){
+            System.out.println(perfResults);
         }
     }
 
@@ -343,8 +350,7 @@ public class Main {
         $.location AS location TEXT PHONETIC dm:en
         $.responsible-parties.*.phone AS phone TEXT $.times.*.military as times TAG
          */
-
-        try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+        JedisPooled jedis = connectionHelper.getPooledJedis();
             Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
                     .addSortableNumericField("$.cost").as("cost")
                     .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
@@ -364,14 +370,13 @@ public class Main {
          */
             jedis.ftAliasAdd(INDEX_ALIAS_NAME, INDEX_1_NAME);
             System.out.println("Successfully created search index and search index alias");
-        }
     }
 
 
     //load JSON Objects for testing
     private static void loadData(URI uri,boolean onlyLoadTwoObjects,int howManyObjects){
         if(onlyLoadTwoObjects) {
-            try (UnifiedJedis jedis = new UnifiedJedis(uri)) {
+            JedisPooled jedis = connectionHelper.getPooledJedis();
                 jedis.del("zew:activities:gf");
                 jedis.del("zew:activities:bl");
 
@@ -447,32 +452,29 @@ public class Main {
                 hostsHolder.put("hosts", hosts);
                 obj.put("responsible-parties", hostsHolder);
                 jedis.jsonSet("zew:activities:bl", obj);
-            }
         }
         else{
-            try (Jedis jedis = new Jedis(uri)) {
-                int howManyBatches = (howManyObjects/200)>0?(howManyObjects/200)+1:1;//makes sure at least 1 batch gets fired
-                int countDownOfObjects = howManyObjects;
-                System.out.println("Writing "+howManyObjects+" objects to Redis in "+howManyBatches+" batches of 200 or less...");
-                Pipeline pipeline = new Pipeline(jedis);
-                for (int x = 0; x < howManyBatches; x++) {
-                    int innerBatchQuantity = 200;
-                    if(countDownOfObjects<=200){
-                        innerBatchQuantity=countDownOfObjects;
-                    }
-                    for(int innerX = 0; innerX < innerBatchQuantity; innerX++) {
-                        //System.out.println("innerX == "+innerX);
-                        pipeline.jsonSet(PREFIX_FOR_SEARCH + countDownOfObjects, JsonZewActivityBuilder.createFakeJsonZewActivityObject());
-                        countDownOfObjects--;
-                    }
-                    pipeline.sync(); // execute batch of 200 JSON Set commands
-                    System.out.print("<"+countDownOfObjects+" JSON objects still to go> ");
+            Pipeline pipeline = connectionHelper.getPipeline();
+            int howManyBatches = (howManyObjects/200)>0?(howManyObjects/200)+1:1;//makes sure at least 1 batch gets fired
+            int countDownOfObjects = howManyObjects;
+            System.out.println("Writing "+howManyObjects+" objects to Redis in "+howManyBatches+" batches of 200 or less...");
+            for (int x = 0; x < howManyBatches; x++) {
+                int innerBatchQuantity = 200;
+                if(countDownOfObjects<=200){
+                    innerBatchQuantity=countDownOfObjects;
                 }
+                for(int innerX = 0; innerX < innerBatchQuantity; innerX++) {
+                    //System.out.println("innerX == "+innerX);
+                    pipeline.jsonSet(PREFIX_FOR_SEARCH + countDownOfObjects, JsonZewActivityBuilder.createFakeJsonZewActivityObject());
+                    countDownOfObjects--;
+                }
+                pipeline.sync(); // execute batch of 200 JSON Set commands
+                System.out.print("<"+countDownOfObjects+" JSON objects still to go> ");
             }
-
         }
     }
 }
+
 class JsonZewActivityBuilder{
 
     static final String[] DAYS_OF_WEEK = {"Mon","Tue","Wed","Thu","Fri","Sat","Sun"};
@@ -546,5 +548,45 @@ class JsonZewActivityBuilder{
         hostsHolder.put("hosts", hosts);
         obj.put("responsible-parties", hostsHolder);
         return obj;
+    }
+}
+
+class ConnectionHelper{
+
+    final PooledConnectionProvider connectionProvider;
+    final JedisPooled jedisPooled;
+
+    public Pipeline getPipeline(){
+        return new Pipeline(connectionProvider.getConnection());
+    }
+
+    public JedisPooled getPooledJedis(){
+        return jedisPooled;
+    }
+
+    public ConnectionHelper(URI uri){
+        HostAndPort address = new HostAndPort(uri.getHost(), uri.getPort());
+        JedisClientConfig clientConfig = null;
+        System.out.println("$$$ "+uri.getAuthority().split(":").length);
+        if(uri.getAuthority().split(":").length==3){
+            String user = uri.getAuthority().split(":")[0];
+            String password = uri.getAuthority().split(":")[1];
+            System.out.println("\n\nUsing user: "+user+" / password @@@@@@@@@@");
+            clientConfig = DefaultJedisClientConfig.builder().user(user).password(password)
+                    .connectionTimeoutMillis(30000).timeoutMillis(120000).build(); // timeout and client settings
+
+        }else {
+            clientConfig = DefaultJedisClientConfig.builder()
+                    .connectionTimeoutMillis(30000).timeoutMillis(120000).build(); // timeout and client settings
+        }
+        GenericObjectPoolConfig<Connection> poolConfig = new ConnectionPoolConfig();
+        poolConfig.setMaxIdle(10);
+        poolConfig.setMaxTotal(10);
+        poolConfig.setMinIdle(1);
+        poolConfig.setMaxWait(Duration.ofMinutes(1));
+        poolConfig.setTestOnCreate(true);
+
+        this.connectionProvider = new PooledConnectionProvider(new ConnectionFactory(address, clientConfig), poolConfig);
+        this.jedisPooled = new JedisPooled(connectionProvider);
     }
 }
