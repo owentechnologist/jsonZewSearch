@@ -124,8 +124,8 @@ public class Main {
         // dropping and recreating the index can result in partial matches on existing data
         try {
             if (quantity > 0 || isOnlyTwo) {
-                dropIndex(uri);
-                addIndex(uri);
+                dropIndex();
+                addIndex();
                 System.out.println("Sleeping for " + indexSleepTime + " milliseconds to give the newly created index time to catch up with pre-loaded documents");
                 Thread.sleep(indexSleepTime); // give the index some time to catch up with any pre-existing data
             }
@@ -139,25 +139,24 @@ public class Main {
             }
         }
         System.out.println("LOADING JSON DATA...");
-        loadData(uri, isOnlyTwo, quantity);
-        testJedisConnection(uri);
+        loadData(isOnlyTwo, quantity);
+        testJedisConnection();
         System.out.println("\n\nTESTING SEARCH QUERY ...");
-        testJSONSearchQuery(uri);
+        testJSONSearchQuery();
         if (autocompleteTries > 0) {
-            prepareAutoComplete(uri);
+            prepareAutoComplete();
             System.out.println("\nTesting auto-complete ...[try the letter h or l]");
-            testAutoComplete(uri, autocompleteTries);
+            testAutoComplete(autocompleteTries);
         }
     }
 
-    private static void testJedisConnection(URI uri) {
-        System.out.println("\nURI == " + uri.getHost() + ":" + uri.getPort());
+    private static void testJedisConnection() {
         JedisPooled jedis = connectionHelper.getPooledJedis();
         System.out.println("Testing connection by executing 'DBSIZE' response is: " + jedis.dbSize());
         System.out.println("Testing index state by executing 'FT.INFO' " + INDEX_1_NAME + " response is: " + jedis.ftInfo(INDEX_1_NAME));
     }
 
-    private static void testAutoComplete(URI uri, int howManyTimes) {
+    private static void testAutoComplete(int howManyTimes) {
         JedisPooled jedis = connectionHelper.getPooledJedis();
         BufferedReader reader = new BufferedReader(
                 new InputStreamReader(System.in));
@@ -180,7 +179,7 @@ public class Main {
     Each category could live in its own auto-complete suggestion key which would allow for more discreet treatment of the suggestions
     That would, however, require multiple calls to fetch the results as each key would need to be checked separately
      */
-    private static void prepareAutoComplete(URI uri){
+    private static void prepareAutoComplete(){
         JedisPooled jedis = connectionHelper.getPooledJedis();
             for(String animal:JsonZewActivityBuilder.animalSpecies) {
                 jedis.ftSugAdd(SUGGESTION_KEY,animal,1.0 );
@@ -196,7 +195,7 @@ public class Main {
             }
     }
 
-    private static void dropIndex(URI uri) {
+    private static void dropIndex() {
         JedisPooled jedis = connectionHelper.getPooledJedis();
         try{
             jedis.ftDropIndex(INDEX_1_NAME);
@@ -212,79 +211,166 @@ public class Main {
      * "cost":0,"name":"Gorilla Feeding",
      * "days":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
      * "location":"Gorilla House South"}
-     * * @param hnp
+     *
      */
-    private static void testJSONSearchQuery(URI uri) {
+    private static void testJSONSearchQuery() {
         ArrayList<String> perfTestResults = new ArrayList<>();
         JedisPooled jedis = connectionHelper.getPooledJedis();
             long startTime = System.currentTimeMillis();
-            String query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
+            // Query that only works with Dialect 3: (won't fire if DIALECT VERSION is lower than 3)
+        if(dialectVersion==3){
+            // This query does not return the whole document but will return
+            // a specified subsection of the JSON document as well as individual indexed attributes:
+            /*
+            With our JSON document looking like this:
+            *************************************
+            JSON.RESP zew:activities:58506 $
+            1) 1) "{"
+               2) "times"
+               3) 1) "["
+                  2) 1) "{"
+                     2) "military"
+                     3) "1700"
+                     4) "civilian"
+                     5) "5:00 PM"
+                  3) 1) "{"
+                     2) "military"
+                     3) "2000"
+                     4) "civilian"
+                     5) "8:00 PM"
+                  4) 1) "{"
+               4) "responsible-parties"
+               5) 1) "{"
+                  2) "number_of_contacts"
+                  3) "3"
+                  4) "hosts"
+                  5) 1) "["
+                     2) 1) "{"
+                        2) "phone"
+                        3) "281-729-4206"
+                        4) "name"
+                        5) "Chadwick Johnston"
+                        6) "email"
+                        7) "Chadwick@zew.org"
+                     3) 1) "{"
+                        2) "phone"
+                        3) "264.618.7058"
+                        4) "name"
+                        5) "Benedict Mante"
+                        6) "email"
+                        7) "Benedict@zew.org"
+                     4) 1) "{"
+                        2) "phone"
+                        3) "510-347-9788"
+                        4) "name"
+                        5) "Chadwick Kautzer DDS"
+                        6) "email"
+                        7) "Chadwick@zew.org"
+               6) "cost"
+               7) "10"
+               8) "name"
+               9) "Zebra Live Show"
+               10) "days"
+               11) 1) "["
+                  2) "Mon"
+                  3) "Wed"
+                  4) "Thu"
+                  5) "Sat"
+                  6) "Sun"
+               12) "location"
+               13) "Zebra Habitat North"
+            **********************
+            And our working Index being this:
+            FT.CREATE idx_json1 ON JSON PREFIX 1 zew:activities: SCHEMA
+            $.name AS event_name TEXT PHONETIC dm:en $.cost AS cost NUMERIC $.days.* AS days TAG
+            $.location AS location TEXT PHONETIC dm:en
+            $.responsible-parties.*.name AS contact_name TEXT $.times.*.military as times TAG
+
+            If we only want to retrieve the responsible-parties subsection of the document that matches
+            the contact_name in our query we need to specify the filter in both the query and in the returned field
+            NB: this will not work with Phonetic matching nor synonyms
+             */
+            String query = "@contact_name:(Chadw*)";
             SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                     .returnFields(
-                            FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times[?(@.military==\"1400\" || @.military==\"2000\")]")
-                                    .as("matched_times"),
-                            FieldName.of("$.times[*].civilian").as("civilian"), //  dialect determines multiple or single results
-                            FieldName.of("$.days").as("days"), // multiple days may be returned
-                            FieldName.of("$.responsible-parties.hosts.[*].email").as("contact_email"), //  dialect determines multiple or single results
-                            FieldName.of("$.responsible-parties.hosts.[*].phone").as("contact_phone"), //  dialect determines multiple or single results
-                            FieldName.of("event_name"), // only a single value exists in a document
-                            FieldName.of("$.times[*].military").as("military"), //  dialect determines multiple or single results
-                            FieldName.of("$.description")
+                            FieldName.of("event_name"),// This is a simple field from the root of the JSON doc (it is aliased in the index)
+                            FieldName.of("$.location").as("EVENT_LOCATION"),// This is a simple field from the root of the JSON doc
+                            FieldName.of("$.responsible-parties.hosts[?(@.name =~ \"(?i)^Chadw\")]") // note the ability to partially match with regex
+                                    .as("matched_party_by_name") // this demonstrates the discreet and aligned response capability
                     ).limit(0,howManyResultsToShow).dialect(dialectVersion)
             );
-            perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+            perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
             printResultsToScreen(query, result);
-            perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+            perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        }
+        // first Query:
+        String query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
+        SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
+                .returnFields(
+                        FieldName.of("location"), // only a single value exists in a document
+                        FieldName.of("$.times[?(@.military==\"1400\" || @.military==\"2000\")]")
+                                .as("matched_times"),
+                        FieldName.of("$.times[*].civilian").as("civilian"), //  dialect determines multiple or single results
+                        FieldName.of("$.days").as("days"), // multiple days may be returned
+                        FieldName.of("$.responsible-parties.hosts.[*].email").as("contact_email"), //  dialect determines multiple or single results
+                        FieldName.of("$.responsible-parties.hosts.[*].phone").as("contact_phone"), //  dialect determines multiple or single results
+                        FieldName.of("event_name"), // only a single value exists in a document
+                        FieldName.of("$.times[*].military").as("military"), //  dialect determines multiple or single results
+                        FieldName.of("$.description")
+                ).limit(0,howManyResultsToShow).dialect(dialectVersion)
+        );
+        perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        printResultsToScreen(query, result);
+        perfTestResults.add("Query1 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
 
-            //Second query:
-            startTime = System.currentTimeMillis();
-            query = "@contact_name:(Jo* Hu*) @times:{2000}";
-            result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
-                    .returnFields(
-                            FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times[*].civilian").as("first_event_time"), // Dialect determines if this is a single result
-                            FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
-                            FieldName.of("$.times[?(@.military==\"2000\")]").as("matched_times"),//Dialect determines if this is a single result
-                            FieldName.of("$.days").as("days"), // multiple days may be returned
-                            FieldName.of("$.responsible-parties[*].hosts").as("hosts"),//Dialect determines if this is a single result
-                            FieldName.of("event_name"), // only a single value exists in a document
-                            FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
-                    ).limit(0,howManyResultsToShow).dialect(dialectVersion)
-            );
-            perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
-            printResultsToScreen(query, result);
-            perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        //Second query:
+        startTime = System.currentTimeMillis();
+        query = "@contact_name:(Jo* Hu*) @times:{2000}";
+        result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
+                .returnFields(
+                        FieldName.of("location"), // only a single value exists in a document
+                        FieldName.of("$.times[*].civilian").as("first_event_time"), // Dialect determines if this is a single result
+                        FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
+                        FieldName.of("$.times[?(@.military==\"2000\")]").as("matched_times"),//Dialect determines if this is a single result
+                        FieldName.of("$.days").as("days"), // multiple days may be returned
+                        FieldName.of("$.responsible-parties[*].hosts").as("hosts"),//Dialect determines if this is a single result
+                        FieldName.of("event_name"), // only a single value exists in a document
+                        FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
+                ).limit(0,howManyResultsToShow).dialect(dialectVersion)
+        );
+        perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        printResultsToScreen(query, result);
+        perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
 
-            //Third query:
-            startTime = System.currentTimeMillis();
-            query = "@cost:[-inf 5.00]";
-            result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
-                    .returnFields(
-                            FieldName.of("location"), // only a single value exists in a document
-                            FieldName.of("$.times.[*].civilian").as("all_times"), //  dialect determines multiple or single results
-                            FieldName.of("$.days").as("days"), // multiple days may be returned
-                            FieldName.of("event_name"), // only a single value exists in a document
-                            FieldName.of("$.cost").as("cost_in_us_dollars")
-                    ).limit(0,howManyResultsToShow).dialect(dialectVersion)
-            );
-            perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
-            printResultsToScreen(query, result);
-            perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        //Third query:
+        startTime = System.currentTimeMillis();
+        query = "@cost:[-inf 5.00]";
+        result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
+                .returnFields(
+                        FieldName.of("location"), // only a single value exists in a document
+                        FieldName.of("$.times.[*].civilian").as("all_times"), //  dialect determines multiple or single results
+                        FieldName.of("$.days").as("days"), // multiple days may be returned
+                        FieldName.of("event_name"), // only a single value exists in a document
+                        FieldName.of("$.cost").as("cost_in_us_dollars")
+                ).limit(0,howManyResultsToShow).dialect(dialectVersion)
+        );
+        perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        printResultsToScreen(query, result);
+        perfTestResults.add("Query3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
 
-            //TEST Simple AGGREGATION...
-            ArrayList<String> groupByFields = new ArrayList<>();
-            groupByFields.add("@cost");
-            groupByFields.add("@location");
-            groupByFields.add("@event_name");
-            ArrayList<Reducer> reducerCollection = new ArrayList<>();
-            reducerCollection.add(Reducers.count().as("event_match_count"));
-            AggregationBuilder builder = new AggregationBuilder("@event_name:Petting @cost:[1.00 +inf] " +
-                    "@location:Gorilla @location:East -@days:{Tue Wed Thu}")
-                    .groupBy(groupByFields,reducerCollection).filter("@cost <= 9").dialect(dialectVersion);
-            AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
-            String queryForDisplay = "FT.AGGREGATE idxa_zew_events \"@event_name:Petting @cost:[1.00 +inf] @location:Gorilla @location:East -@days:{Tue Wed Thu}\" GROUPBY 3 @cost @location @event_name REDUCE COUNT 0 AS event_match_count FILTER @cost <= 9";
-            printAggregateResultsToScreen(queryForDisplay,aggregationResult);
+        //TEST Simple AGGREGATION...
+        ArrayList<String> groupByFields = new ArrayList<>();
+        groupByFields.add("@cost");
+        groupByFields.add("@location");
+        groupByFields.add("@event_name");
+        ArrayList<Reducer> reducerCollection = new ArrayList<>();
+        reducerCollection.add(Reducers.count().as("event_match_count"));
+        AggregationBuilder builder = new AggregationBuilder("@event_name:Petting @cost:[1.00 +inf] " +
+                "@location:Gorilla @location:East -@days:{Tue Wed Thu}")
+                .groupBy(groupByFields,reducerCollection).filter("@cost <= 9").dialect(dialectVersion);
+        AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
+        String queryForDisplay = "FT.AGGREGATE idxa_zew_events \"@event_name:Petting @cost:[1.00 +inf] @location:Gorilla @location:East -@days:{Tue Wed Thu}\" GROUPBY 3 @cost @location @event_name REDUCE COUNT 0 AS event_match_count FILTER @cost <= 9";
+        printAggregateResultsToScreen(queryForDisplay,aggregationResult);
 
         System.out.println("\n\tPerformance Results from this test run: \n");
         for(String perfResults : perfTestResults){
@@ -338,7 +424,7 @@ public class Main {
     // This next query returns the bonobo lecture with only the first time from the array of times (there could be more):
     // FT.SEARCH idx_zew_events "@days:{Mon} -@location:('House')" return 3 event_name times location
 
-    private static void addIndex(URI uri){
+    private static void addIndex(){
         /* Sample JSON object:
         [{"times":[{"military":"0800","civilian":"8 AM"},{"military":"1500","civilian":"3 PM"},{"military":"2200","civilian":"10 PM"}],
         "responsible-parties":[{"phone":"715-876-5522","name":"Duncan Mills","email":"dmilla@zew.org"}],
@@ -374,7 +460,7 @@ public class Main {
 
 
     //load JSON Objects for testing
-    private static void loadData(URI uri,boolean onlyLoadTwoObjects,int howManyObjects){
+    private static void loadData(boolean onlyLoadTwoObjects,int howManyObjects){
         if(onlyLoadTwoObjects) {
             JedisPooled jedis = connectionHelper.getPooledJedis();
                 jedis.del("zew:activities:gf");
