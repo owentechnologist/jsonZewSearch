@@ -305,8 +305,8 @@ public class Main {
         printResultsToScreen(query, result);
         perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
         // first Query:
-        String query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
-        SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
+        query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
+        result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                 .returnFields(
                         FieldName.of("location"), // only a single value exists in a document
                         FieldName.of("$.times[?(@.military==\"1400\" || @.military==\"2000\")]")
