@@ -216,93 +216,94 @@ public class Main {
     private static void testJSONSearchQuery() {
         ArrayList<String> perfTestResults = new ArrayList<>();
         JedisPooled jedis = connectionHelper.getPooledJedis();
-            long startTime = System.currentTimeMillis();
-            // Query that only works with Dialect 3: (won't fire if DIALECT VERSION is lower than 3)
-        if(dialectVersion==3){
-            // This query does not return the whole document but will return
-            // a specified subsection of the JSON document as well as individual indexed attributes:
-            /*
-            With our JSON document looking like this:
-            *************************************
-            JSON.RESP zew:activities:58506 $
-            1) 1) "{"
-               2) "times"
-               3) 1) "["
-                  2) 1) "{"
-                     2) "military"
-                     3) "1700"
-                     4) "civilian"
-                     5) "5:00 PM"
-                  3) 1) "{"
-                     2) "military"
-                     3) "2000"
-                     4) "civilian"
-                     5) "8:00 PM"
-                  4) 1) "{"
-               4) "responsible-parties"
-               5) 1) "{"
-                  2) "number_of_contacts"
-                  3) "3"
-                  4) "hosts"
-                  5) 1) "["
-                     2) 1) "{"
-                        2) "phone"
-                        3) "281-729-4206"
-                        4) "name"
-                        5) "Chadwick Johnston"
-                        6) "email"
-                        7) "Chadwick@zew.org"
-                     3) 1) "{"
-                        2) "phone"
-                        3) "264.618.7058"
-                        4) "name"
-                        5) "Benedict Mante"
-                        6) "email"
-                        7) "Benedict@zew.org"
-                     4) 1) "{"
-                        2) "phone"
-                        3) "510-347-9788"
-                        4) "name"
-                        5) "Chadwick Kautzer DDS"
-                        6) "email"
-                        7) "Chadwick@zew.org"
-               6) "cost"
-               7) "10"
-               8) "name"
-               9) "Zebra Live Show"
-               10) "days"
-               11) 1) "["
-                  2) "Mon"
-                  3) "Wed"
-                  4) "Thu"
-                  5) "Sat"
-                  6) "Sun"
-               12) "location"
-               13) "Zebra Habitat North"
-            **********************
-            And our working Index being this:
-            FT.CREATE idx_json1 ON JSON PREFIX 1 zew:activities: SCHEMA
-            $.name AS event_name TEXT PHONETIC dm:en $.cost AS cost NUMERIC $.days.* AS days TAG
-            $.location AS location TEXT PHONETIC dm:en
-            $.responsible-parties.*.name AS contact_name TEXT $.times.*.military as times TAG
+        long startTime = System.currentTimeMillis();
+        // Query that works with Dialect 3 to showcase when more than one match exists within a document
 
-            If we only want to retrieve the responsible-parties subsection of the document that matches
-            the contact_name in our query we need to specify the filter in both the query and in the returned field
-            NB: this will not work with Phonetic matching nor synonyms
-             */
-            String query = "@contact_name:(Chadw*)";
-            SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
-                    .returnFields(
-                            FieldName.of("event_name"),// This is a simple field from the root of the JSON doc (it is aliased in the index)
-                            FieldName.of("$.location").as("EVENT_LOCATION"),// This is a simple field from the root of the JSON doc
-                            FieldName.of("$.responsible-parties.hosts[?(@.name =~ \"(?i)^Chadw\")]") // note the ability to partially match with regex
-                                    .as("matched_party_by_name") // this demonstrates the discreet and aligned response capability
-                    ).limit(0,howManyResultsToShow).dialect(dialectVersion)
-            );
-            perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
-            printResultsToScreen(query, result);
-            perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
-        }
+        // This query does not return the whole document but will return
+        // a specified subsection of the JSON document as well as individual indexed attributes:
+        // NB: if there are two or more instances of 'Chadwick' in a single document DIALECT 2 will not show more than the initial one
+        // DIALECT 3 will show all the matching instances within a document
+        /*
+        With our JSON document looking like this:
+        *************************************
+        JSON.RESP zew:activities:58506 $
+        1) 1) "{"
+           2) "times"
+           3) 1) "["
+              2) 1) "{"
+                 2) "military"
+                 3) "1700"
+                 4) "civilian"
+                 5) "5:00 PM"
+              3) 1) "{"
+                 2) "military"
+                 3) "2000"
+                 4) "civilian"
+                 5) "8:00 PM"
+              4) 1) "{"
+           4) "responsible-parties"
+           5) 1) "{"
+              2) "number_of_contacts"
+              3) "3"
+              4) "hosts"
+              5) 1) "["
+                 2) 1) "{"
+                    2) "phone"
+                    3) "281-729-4206"
+                    4) "name"
+                    5) "Chadwick Johnston"
+                    6) "email"
+                    7) "Chadwick@zew.org"
+                 3) 1) "{"
+                    2) "phone"
+                    3) "264.618.7058"
+                    4) "name"
+                    5) "Benedict Mante"
+                    6) "email"
+                    7) "Benedict@zew.org"
+                 4) 1) "{"
+                    2) "phone"
+                    3) "510-347-9788"
+                    4) "name"
+                    5) "Chadwick Kautzer DDS"
+                    6) "email"
+                    7) "Chadwick@zew.org"
+           6) "cost"
+           7) "10"
+           8) "name"
+           9) "Zebra Live Show"
+           10) "days"
+           11) 1) "["
+              2) "Mon"
+              3) "Wed"
+              4) "Thu"
+              5) "Sat"
+              6) "Sun"
+           12) "location"
+           13) "Zebra Habitat North"
+        **********************
+        And our working Index being this:
+        FT.CREATE idx_json1 ON JSON PREFIX 1 zew:activities: SCHEMA
+        $.name AS event_name TEXT PHONETIC dm:en $.cost AS cost NUMERIC $.days.* AS days TAG
+        $.location AS location TEXT PHONETIC dm:en
+        $.responsible-parties.*.name AS contact_name TEXT $.times.*.military as times TAG
+
+        If we only want to retrieve the responsible-parties subsection of the document that matches
+        the contact_name in our query we need to specify the filter in both the query and in the returned field
+        NB: this will not work with Phonetic matching nor synonyms
+         */
+        String query = "@contact_name:(Chadw*)";
+        SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
+                .returnFields(
+                        FieldName.of("event_name"),// This is a simple field from the root of the JSON doc (it is aliased in the index)
+                        FieldName.of("$.location").as("EVENT_LOCATION"),// This is a simple field from the root of the JSON doc
+                        FieldName.of("$.responsible-parties.hosts[?(@.name =~ \"(?i)^Chadw\")]") // note the ability to partially match with regex
+                                .as("matched_party_by_name") // this demonstrates the discreet and aligned response capability
+                ).limit(0,howManyResultsToShow).dialect(dialectVersion)
+        );
+        perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
+        printResultsToScreen(query, result);
+        perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
         // first Query:
         String query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
         SearchResult result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
