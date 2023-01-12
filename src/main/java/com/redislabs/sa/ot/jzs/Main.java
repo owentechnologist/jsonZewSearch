@@ -192,7 +192,7 @@ public class Main {
     /*
      * sample JSON that is being queried: (note that only the specified return fields are returned from a query)
      {"times":[{"military":"0800","civilian":"8 AM"},{"military":"1500","civilian":"3 PM"},{"military":"2200","civilian":"10 PM"}]
-     * ,"responsible-parties":{"number_of_contacts":2,
+     * ,"responsible_parties":{"number_of_contacts":2,
      * "hosts":[{"phone":"715-876-5522","name":"Duncan Mills","email":"dmilla@zew.org"},{"phone":"815-336-5598",
      * "name":"Xiria Andrus","email":"xiriaa@zew.org"}]},
      * "cost":0,"name":"Gorilla Feeding",
@@ -228,7 +228,7 @@ public class Main {
                  4) "civilian"
                  5) "8:00 PM"
               4) 1) "{"
-           4) "responsible-parties"
+           4) "responsible_parties"
            5) 1) "{"
               2) "number_of_contacts"
               3) "3"
@@ -284,7 +284,7 @@ public class Main {
                 .returnFields(
                         FieldName.of("event_name"),// This is a simple field from the root of the JSON doc (it is aliased in the index)
                         FieldName.of("$.location").as("EVENT_LOCATION"),// This is a simple field from the root of the JSON doc
-                        FieldName.of("$.responsible-parties.hosts[?(@.name =~ \"(?i)^Chadw\")]") // note the ability to partially match with regex
+                        FieldName.of("$.responsible_parties.hosts[?(@.name =~ \"(?i)^Chadw\")]") // note the ability to partially match with regex
                                 .as("matched_party_by_name") // this demonstrates the discreet and aligned response capability
                 ).limit(0,howManyResultsToShow).dialect(dialectVersion)
         );
@@ -300,8 +300,8 @@ public class Main {
                                 .as("matched_times"),
                         FieldName.of("$.times[*].civilian").as("civilian"), //  dialect determines multiple or single results
                         FieldName.of("$.days").as("days"), // multiple days may be returned
-                        FieldName.of("$.responsible-parties.hosts.[*].email").as("contact_email"), //  dialect determines multiple or single results
-                        FieldName.of("$.responsible-parties.hosts.[*].phone").as("contact_phone"), //  dialect determines multiple or single results
+                        FieldName.of("$.responsible_parties.hosts.[*].email").as("contact_email"), //  dialect determines multiple or single results
+                        FieldName.of("$.responsible_parties.hosts.[*].phone").as("contact_phone"), //  dialect determines multiple or single results
                         FieldName.of("event_name"), // only a single value exists in a document
                         FieldName.of("$.times[*].military").as("military"), //  dialect determines multiple or single results
                         FieldName.of("$.description")
@@ -321,9 +321,9 @@ public class Main {
                         FieldName.of("$.times").as("all_times"), // multiple times may be returned when not filtered
                         FieldName.of("$.times[?(@.military==\"2000\")]").as("matched_times"),//Dialect determines if this is a single result
                         FieldName.of("$.days").as("days"), // multiple days may be returned
-                        FieldName.of("$.responsible-parties[*].hosts").as("hosts"),//Dialect determines if this is a single result
+                        FieldName.of("$.responsible_parties[*].hosts").as("hosts"),//Dialect determines if this is a single result
                         FieldName.of("event_name"), // only a single value exists in a document
-                        FieldName.of("$.responsible-parties.number_of_contacts").as("hosts_size")
+                        FieldName.of("$.responsible_parties.number_of_contacts").as("hosts_size")
                 ).limit(0,howManyResultsToShow).dialect(dialectVersion)
         );
         perfTestResults.add("Query2 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+") Execution took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
@@ -415,14 +415,14 @@ public class Main {
     private static void addIndex(){
         /* Sample JSON object:
         [{"times":[{"military":"0800","civilian":"8 AM"},{"military":"1500","civilian":"3 PM"},{"military":"2200","civilian":"10 PM"}],
-        "responsible-parties":[{"phone":"715-876-5522","name":"Duncan Mills","email":"dmilla@zew.org"}],
+        "responsible_parties":[{"phone":"715-876-5522","name":"Duncan Mills","email":"dmilla@zew.org"}],
         "cost":"0.00","name":"Gorilla Feeding","days":["Mon","Tue","Wed","Thu","Fri","Sat","Sun"],
         "location":"Gorilla House South"}]
         //working Search idx:
         FT.CREATE idx_json1 ON JSON PREFIX 1 zew:activities: SCHEMA
         $.name AS event_name TEXT PHONETIC dm:en $.cost AS cost NUMERIC $.days.* AS days TAG
         $.location AS location TEXT PHONETIC dm:en
-        $.responsible-parties.*.phone AS phone TEXT $.times.*.military as times TAG
+        $.responsible_parties.*.phone AS phone TEXT $.times.*.military as times TAG
          */
         JedisPooled jedis = connectionHelper.getPooledJedis();
             Schema schema = new Schema().addField(new Schema.TextField(FieldName.of("$.name").as("event_name")))
@@ -430,7 +430,7 @@ public class Main {
                     .addField(new Schema.Field(FieldName.of("$.days.*").as("days"), Schema.FieldType.TAG))
                     .addField(new Schema.Field(FieldName.of("$.times[*].military").as("times"), Schema.FieldType.TAG))
                     .addField(new Schema.Field(FieldName.of("$.location").as("location"), Schema.FieldType.TEXT))
-                    .addTextField("$.responsible-parties.hosts[*].name", .75).as("contact_name"); //use with search 2.6.1 allows TEXT in multivalues
+                    .addTextField("$.responsible_parties.hosts[*].name", .75).as("contact_name"); //use with search 2.6.1 allows TEXT in multivalues
             IndexDefinition indexDefinition = new IndexDefinition(IndexDefinition.Type.JSON)
                     .setPrefixes(new String[]{PREFIX_FOR_SEARCH});
 
@@ -497,7 +497,7 @@ public class Main {
                 contact2.put("email", "xiriaa@zew.org");
                 hosts.put(contact2);
                 hostsHolder.put("hosts", hosts);
-                obj.put("responsible-parties", hostsHolder);
+                obj.put("responsible_parties", hostsHolder);
                 jedis.jsonSet("zew:activities:gf", obj);
 
                 //build second zew event:
@@ -622,7 +622,7 @@ class JsonZewActivityBuilder{
         }
 
         hostsHolder.put("hosts", hosts);
-        obj.put("responsible-parties", hostsHolder);
+        obj.put("responsible_parties", hostsHolder);
         return obj;
     }
 }

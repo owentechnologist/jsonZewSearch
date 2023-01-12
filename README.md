@@ -69,7 +69,7 @@ The JSON Objects represent fake Zewtopia Zoo events and look like this:
 		"military": "2200",
 		"civilian": "10 PM"
 	}],
-	"responsible-parties": {
+	"responsible_parties": {
 		"number_of_contacts": 2,
 		"hosts": [{
 			"phone": "715-876-5522",
