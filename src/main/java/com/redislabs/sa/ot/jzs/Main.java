@@ -102,7 +102,7 @@ public class Main {
                 int multiValueIndex = argList.indexOf("--multivalue");
                 multiValueSearch = Boolean.parseBoolean(argList.get(multiValueIndex + 1));
                 if (multiValueSearch) {
-                    dialectVersion = 3;
+                    dialectVersion = 2;
                 }
             }
         }
@@ -292,7 +292,7 @@ public class Main {
         printResultsToScreen(query, result);
         perfTestResults.add("Dialect3 (with "+result.getTotalResults()+" results and limit size of "+howManyResultsToShow+")) Execution plus printing results to screen took: "+(System.currentTimeMillis()-startTime)+" milliseconds");
         // first Query:
-        query = "@days:{Sat,Sun} @times:{1400,2000} -@location:(House)";
+        query = "@days:{Sat} @days:{Sun} @times:{1400,2000} -@location:(House)";
         result = jedis.ftSearch(INDEX_ALIAS_NAME, new Query(query)
                 .returnFields(
                         FieldName.of("location"), // only a single value exists in a document
@@ -354,7 +354,7 @@ public class Main {
         ArrayList<Reducer> reducerCollection = new ArrayList<>();
         reducerCollection.add(Reducers.count().as("event_match_count"));
         AggregationBuilder builder = new AggregationBuilder("@event_name:Petting @cost:[1.00 +inf] " +
-                "@location:Gorilla @location:East -@days:{Tue Wed Thu}")
+                "@location:Gorilla @location:East -@days:{Tue} -@days:{Wed} -@days:{Thu}")
                 .groupBy(groupByFields,reducerCollection).filter("@cost <= 9").dialect(dialectVersion);
         AggregationResult aggregationResult = jedis.ftAggregate(INDEX_ALIAS_NAME,builder);
         String queryForDisplay = "FT.AGGREGATE idxa_zew_events \"@event_name:Petting @cost:[1.00 +inf] @location:Gorilla @location:East -@days:{Tue Wed Thu}\" GROUPBY 3 @cost @location @event_name REDUCE COUNT 0 AS event_match_count FILTER @cost <= 9";
@@ -698,7 +698,7 @@ class ConnectionHelper{
                     .connectionTimeoutMillis(30000).timeoutMillis(120000).build(); // timeout and client settings
         }
         GenericObjectPoolConfig<Connection> poolConfig = new ConnectionPoolConfig();
-        poolConfig.setMaxIdle(10);
+        poolConfig.setMaxIdle(100);
         poolConfig.setMaxTotal(1000);
         poolConfig.setMinIdle(1);
         poolConfig.setMaxWait(Duration.ofMinutes(1));
@@ -706,5 +706,6 @@ class ConnectionHelper{
 
         this.connectionProvider = new PooledConnectionProvider(new ConnectionFactory(address, clientConfig), poolConfig);
         this.jedisPooled = new JedisPooled(connectionProvider);
+        System.out.println("TESTING CONNECTION: "+jedisPooled.incr("junk:incrme"));
     }
 }
